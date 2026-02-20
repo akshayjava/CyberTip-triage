@@ -1,5 +1,7 @@
 # CyberTip Triage System
 
+![CyberTip Triage Investigator Demo](/Users/akshayjava/Projects/cybertip-triage/video-generator/output/demo.mp4)
+
 Automated ICAC CyberTip triage pipeline for law enforcement. Routes tips from NCMEC and ESPs through an 8-agent AI pipeline to score, classify, and route to the appropriate investigative unit.
 
 > **⚠ Law Enforcement Use Only.** This system handles CSAM reports and is designed for authorized ICAC task forces. All access requires appropriate law enforcement credentials.

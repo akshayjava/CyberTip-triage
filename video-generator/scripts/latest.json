@@ -1,93 +1,114 @@
 {
-  "title": "CyberTip Triage — Investigator Demo",
-  "description": "90-second product demo for ICAC task forces showing AI-powered tip prioritization, Wilson compliance automation, and warrant workflow.",
-  "total_duration_s": 92,
-  "target_audience": "ICAC investigators and supervisors evaluating triage tools",
+  "title": "CyberTip Triage — 90-Second Investigator Demo",
+  "description": "A concise walkthrough of CyberTip Triage for ICAC task forces, demonstrating AI-powered prioritization, Wilson compliance automation, and warrant workflow integration.",
+  "total_duration_s": 93,
+  "target_audience": "ICAC investigators and supervisors evaluating triage automation tools",
   "cues": [
     {
       "time_s": 0,
       "duration_s": 8,
-      "narration": "Your task force received four thousand NCMEC tips last quarter. Most were triaged manually. CyberTip Triage changes that.",
+      "narration": "Your task force received twelve hundred NeCMEC tips last quarter. Most were triaged by hand. CyberTip Triage changes that.",
       "action": {
         "type": "navigate",
         "target": "http://localhost:3000/dashboard"
       },
-      "caption": "The tip volume problem",
+      "caption": "CyberTip Triage — Investigator Dashboard",
       "badge": "OVERVIEW"
     },
     {
       "time_s": 8,
       "duration_s": 7,
-      "narration": "The dashboard surfaces what matters immediately. Stats cards show your current queue depth, pending warrants, and active P1 criticals.",
+      "narration": "The dashboard surfaces what matters first. These stat cards show total tips, open warrants, and blocked files at a glance.",
       "action": {
-        "type": "hover",
+        "type": "highlight",
         "target": ".stats-card"
       },
-      "caption": "Real-time operational picture"
+      "caption": "Real-time operational metrics"
     },
     {
       "time_s": 15,
       "duration_s": 7,
-      "narration": "Every incoming tip is scored by AI and assigned a priority tier — from standard up to P1 Critical for active victim situations.",
+      "narration": "Every incoming tip is scored by AI and assigned a priority tier — from Immediate down to Monitor.",
       "action": {
         "type": "navigate",
         "target": "http://localhost:3000/dashboard#queue"
       },
-      "badge": "AI SCORING"
+      "badge": "AI PRIORITIZATION"
     },
     {
       "time_s": 22,
       "duration_s": 6,
-      "narration": "Filter to critical tier only. These are tips where victim crisis indicators were detected.",
+      "narration": "Filter to Immediate tier. These are tips where victim crisis indicators were detected automatically.",
       "action": {
         "type": "click",
         "target": "#tier-filter-IMMEDIATE"
       },
-      "caption": "One-click critical filter"
+      "caption": "Victim crisis detection"
     },
     {
       "time_s": 28,
-      "duration_s": 7,
-      "narration": "Select the first tip. The detail pane shows the NCMEC report data, AI analysis, and circuit-specific legal guidance.",
+      "duration_s": 6,
+      "narration": "Select the top tip. The detail pane loads the full NeCMEC report, AI analysis, and legal guidance.",
       "action": {
         "type": "click",
         "target": ".tip-row:first-child"
       }
     },
     {
-      "time_s": 35,
+      "time_s": 34,
       "duration_s": 7,
-      "narration": "The tier badge reflects the scoring rationale — here, age indicators and distress language elevated this to P1 Critical.",
+      "narration": "Notice the tier badge — P1 Critical. The system flagged an active minor based on language analysis and metadata.",
       "action": {
         "type": "highlight",
         "target": ".tier-badge"
       },
-      "badge": "PRIORITY TIER"
+      "badge": "CRISIS DETECTION"
     },
     {
-      "time_s": 42,
-      "duration_s": 8,
-      "narration": "Now the compliance layer. This file is blocked. The ESP did not view it before reporting, so under Wilson, you cannot access it without a warrant.",
+      "time_s": 41,
+      "duration_s": 7,
+      "narration": "Now, Wilson compliance. The ESP did not view these files, so the system automatically blocks investigator access.",
+      "action": {
+        "type": "click",
+        "target": "[id=\"tab-files\"]"
+      },
+      "caption": "Fourth Amendment — Wilson v. Ewing protection",
+      "badge": "WILSON COMPLIANCE"
+    },
+    {
+      "time_s": 48,
+      "duration_s": 6,
+      "narration": "Blocked files are clearly marked. No investigator can open them without a warrant — zero ambiguity.",
       "action": {
         "type": "highlight",
-        "target": ".file-blocked"
-      },
-      "caption": "Wilson v. Jessup compliance",
-      "badge": "4TH AMENDMENT"
-    },
-    {
-      "time_s": 50,
-      "duration_s": 6,
-      "narration": "The system enforces this automatically. No investigator can accidentally open a blocked file.",
-      "action": {
-        "type": "hover",
         "target": ".file-blocked"
       }
     },
     {
-      "time_s": 56,
+      "time_s": 54,
       "duration_s": 7,
-      "narration": "Legal notes are generated per tip, citing your circuit's case law. This language drops directly into your warrant application.",
+      "narration": "One click initiates the warrant workflow. Mark the application as filed, and the system tracks it through approval.",
+      "action": {
+        "type": "click",
+        "target": ".warrant-btn"
+      },
+      "caption": "Warrant applied — tracking begins",
+      "badge": "WARRANT WORKFLOW"
+    },
+    {
+      "time_s": 61,
+      "duration_s": 7,
+      "narration": "Scroll down to the legal note. Circuit-specific guidance is generated for each tip based on your jurisdiction.",
+      "action": {
+        "type": "scroll",
+        "target": ".tip-detail-pane",
+        "scrollPx": 200
+      }
+    },
+    {
+      "time_s": 68,
+      "duration_s": 6,
+      "narration": "The legal analysis cites relevant case law so your affidavits start with a foundation, not a blank page.",
       "action": {
         "type": "highlight",
         "target": ".legal-note"
@@ -95,52 +116,41 @@
       "badge": "LEGAL GUIDANCE"
     },
     {
-      "time_s": 63,
+      "time_s": 74,
       "duration_s": 7,
-      "narration": "Click apply for warrant. The system pre-populates the affidavit template and tracks approval status in real time.",
-      "action": {
-        "type": "click",
-        "target": ".warrant-btn"
-      },
-      "caption": "Integrated warrant workflow"
-    },
-    {
-      "time_s": 70,
-      "duration_s": 6,
-      "narration": "Once the judge grants the warrant, blocked files unblock automatically. Full chain of custody is logged.",
-      "action": {
-        "type": "wait",
-        "target": ".tip-detail-pane"
-      },
-      "badge": "AUTO-UNBLOCK"
-    },
-    {
-      "time_s": 76,
-      "duration_s": 7,
-      "narration": "Notice this cluster alert. Forty-three tips reference the same viral image. The system deduplicates them into a single bundle.",
+      "narration": "When a viral image generates dozens of duplicate tips, bundle deduplication collapses them into one investigation.",
       "action": {
         "type": "highlight",
         "target": ".cluster-alert"
       },
-      "caption": "Bundle deduplication",
-      "badge": "CLUSTERING"
+      "caption": "CLU cluster detection — viral dedup",
+      "badge": "DEDUPLICATION"
     },
     {
-      "time_s": 83,
-      "duration_s": 9,
-      "narration": "Less noise, fewer compliance risks, victims identified faster. CyberTip Triage — built for the work you actually do.",
+      "time_s": 81,
+      "duration_s": 7,
+      "narration": "Supervisors get their own view for workload management, audit trails, and compliance reporting across the task force.",
       "action": {
-        "type": "scroll",
-        "target": ".stats-card",
-        "scrollPx": -500
+        "type": "navigate",
+        "target": "http://localhost:3000/tier4"
       },
-      "caption": "CyberTip Triage"
+      "caption": "Supervisor admin panel"
+    },
+    {
+      "time_s": 88,
+      "duration_s": 5,
+      "narration": "CyberTip Triage. Fewer missed children. Defensible cases. Every time.",
+      "action": {
+        "type": "none",
+        "target": ""
+      },
+      "caption": "CyberTip Triage — Built for ICAC"
     }
   ],
   "metadata": {
     "product": "CyberTip Triage",
     "version": "1.0.0-demo",
-    "generated_at": "2026-02-20T06:26:24.145Z",
+    "generated_at": "2026-02-20T16:45:54.151Z",
     "model_used": "claude-opus-4-6"
   }
 }

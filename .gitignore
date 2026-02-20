@@ -28,3 +28,7 @@ uploads/
 tip_data/
 credentials/
 secrets/
+# Video Generator
+video-generator/output/
+video-generator/scripts/
+!video-generator/scripts/latest.json

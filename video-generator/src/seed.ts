@@ -112,6 +112,42 @@ const SYNTHETIC_TIPS = [
     source: "NCMEC_IDS",
     urgent: false,
   },
+  // IMMEDIATE 1: Imminent Danger
+  {
+    description:
+      "CRITICAL - Victim (age 11) is currently online and subject is instructing them to leave their house to meet. " +
+      "Subject username: 'FriendlyNeighbor_42'. Platform: KidChat. " +
+      "Subject has sent photos of a local park. Victim is scared. Request immediate intervention.",
+    source: "public_web_form",
+    urgent: true,
+  },
+  // IMMEDIATE 2: Active Production
+  {
+    description:
+      "ALERT - Monitoring of high-traffic P2P network has identified active streaming originating from IP 192.0.2.89. " +
+      "Content is live CSAM production involving multiple infants. " +
+      "Streaming alias: 'LiveShow_77'. Request emergency response.",
+    source: "inter_agency",
+    urgent: true,
+  },
+  // STANDARD 1: Historical
+  {
+    description:
+      "Investigation into historical CSAM collection found in archived cloud storage account. " +
+      "User: 'Collector92'. Material appears to be from 2018-2020. " +
+      "No evidence of current contact or production. IP: 192.0.2.14. Account inactive for 6 months.",
+    source: "vpn_portal",
+    urgent: false,
+  },
+  // MONITOR 1: Low Detail
+  {
+    description:
+      "Vague report of suspicious user on social media. " +
+      "User 'MysteryUser' reportedly asked for age of others in a public forum. " +
+      "No specific images or threats mentioned. Reporting for record only.",
+    source: "public_web_form",
+    urgent: false,
+  },
 ];
 
 // ── Seed function ─────────────────────────────────────────────────────────────
@@ -159,6 +195,7 @@ export async function seedDemoData(
 
       if (response.ok) {
         seeded++;
+        console.log(`[SEED] Tip ${seeded} enqueued successfully.`);
         // Stagger submissions to avoid overwhelming the queue
         await sleep(800);
       } else {

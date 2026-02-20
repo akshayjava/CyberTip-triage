@@ -92,9 +92,25 @@ TIMING RULES:
 
 NARRATION STYLE:
 - Speak in present tense ("the system automatically blocks...")
-- Use specific LE terminology (ESP, NCMEC, Wilson ruling, ICAC)
+- PRONUNCIATION: Always use the phonetic spelling "NeCMEC" instead of "NCMEC" in all narration text.
+- Use specific LE terminology (ESP, Wilson ruling, ICAC)
 - Each cue's narration should be completable in duration_s seconds at normal speaking pace
 - Total word count across all narrations: 180-220 words
+
+GRACEFUL ENDING:
+- The final cue must be a 5-second buffer to prevent the video from ending abruptly.
+- The action for this final cue should be "none" or "screenshot".
+- The narration for the final cue should be the concluding tagline.
+
+HARDENED SELECTORS:
+- Use #tier-filter-IMMEDIATE for the immediate priority filter.
+- Use .tip-row:first-child for selecting the top tip.
+- ALWAYS click [id="tab-files"] before interacting with .file-blocked or .warrant-btn.
+- Use .file-blocked for Wilson-blocked files.
+- Use .warrant-btn specifically for the "Mark Applied" button.
+- Use .legal-note for the legal guidance section.
+- Use .cluster-alert for the CLU cluster badge.
+- For scrolls, use target: ".tip-detail-pane" and scrollPx: 200.
 
 Do not include any explanation outside the JSON object. Return only valid JSON.`;
 

@@ -180,7 +180,12 @@ async function executeCueAction(
             timeout: 5_000,
           });
           await page.click(action.target);
-          await page.waitForTimeout(400);
+          if (action.target.includes(".tip-row")) {
+            await page.waitForSelector(".tip-detail-pane", { state: "visible", timeout: 5_000 });
+            await page.waitForTimeout(800); // extra settle for animations
+          } else {
+            await page.waitForTimeout(400);
+          }
         }
         break;
 

@@ -17,7 +17,7 @@
  */
 
 import { execSync, spawnSync } from "child_process";
-import { existsSync, mkdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, statSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import type { DemoScript, VideoConfig } from "./types.js";
 
@@ -38,71 +38,52 @@ export async function assembleVideo(
 
   const finalPath = resolve(config.output_path);
   const hasAudio = statSync(voiceoverPath).size > 100;
-  const hasCaptions = existsSync(captionsPath);
+  const hasCaptions = false; // Bypass missing libass/subtitles filter in Homebrew FFmpeg
 
-  console.log("[ASSEMBLE] Generating intro and outro cards...");
-  const introDuration = 3; // seconds
-  const outroDuration = 5;
+  console.log("[ASSEMBLE] Generating outro card...");
+  const introDuration = 0; // seconds
+  const outroDuration = 4;
+  const outroPath = join(outputDir, "outro.mp4");
 
-  const introPath  = join(outputDir, "intro_card.mp4");
-  const outroPath  = join(outputDir, "outro_card.mp4");
-  const concatPath = join(outputDir, "concat_list.txt");
-
-  // Generate intro title card using FFmpeg lavfi
-  generateTitleCard(ffmpeg, {
-    outputPath: introPath,
-    duration: introDuration,
-    width: config.width,
-    height: config.height,
-    title: "CyberTip Triage",
-    subtitle: "AI-Powered ICAC Tip Management",
-    bgColor: "0x0a0e18",
-    textColor: "white",
-    accentColor: "0x2d8cf0",
-    fps: config.fps,
-  });
-
-  // Generate outro CTA card
   generateTitleCard(ffmpeg, {
     outputPath: outroPath,
     duration: outroDuration,
     width: config.width,
     height: config.height,
-    title: "Seeking Pilot Partners",
-    subtitle: "ICAC Task Forces | Contact: demo@cybertip-triage.io",
-    bgColor: "0x0a0e18",
+    title: "CyberTip Triage",
+    subtitle: "Authorized ICAC Use Only",
+    bgColor: "#0a0e18",
     textColor: "white",
-    accentColor: "0x22c55e",
-    fps: config.fps,
+    accentColor: "#2d8cf0",
+    fps: 30
   });
 
-  console.log("[ASSEMBLE] Combining intro + recording + outro...");
+  console.log("[ASSEMBLE] Transcoding recording to x264...");
+  const recordingX264 = join(outputDir, "recording_x264.mp4");
+  runFFmpeg(ffmpeg, [
+    "-y",
+    "-i", recordingPath,
+    "-c:v", "libx264",
+    "-preset", "fast",
+    "-crf", "23",
+    "-an", // Audio added later
+    recordingX264
+  ]);
 
-  // Build concat list
-  const { writeFileSync } = await import("fs");
-  writeFileSync(
-    concatPath,
-    [
-      `file '${resolve(introPath)}'`,
-      `file '${resolve(recordingPath)}'`,
-      `file '${resolve(outroPath)}'`,
-    ].join("\n")
-  );
-
-  // Concat the three video segments
+  console.log("[ASSEMBLE] Concatenating recording + outro...");
   const combinedPath = join(outputDir, "combined.mp4");
+
+  const listPath = join(outputDir, "concat.txt");
+  const outroAbs = resolve(outroPath);
+  writeFileSync(listPath, `file '${resolve(recordingX264)}'\nfile '${outroAbs}'`);
+
   runFFmpeg(ffmpeg, [
     "-y",
     "-f", "concat",
     "-safe", "0",
-    "-i", concatPath,
-    "-vf", `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:-1:-1:color=0x0a0e18`,
-    "-c:v", "libx264",
-    "-preset", "fast",
-    "-crf", "20",
-    "-r", String(config.fps),
-    "-an",
-    combinedPath,
+    "-i", listPath,
+    "-c", "copy",
+    combinedPath
   ]);
 
   // Add captions burn-in if available
@@ -137,21 +118,22 @@ export async function assembleVideo(
       "-i", videoWithCaptions,
       "-itsoffset", String(introDuration),
       "-i", voiceoverPath,
-      "-c:v", "copy",
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "20",
       "-c:a", "aac",
       "-b:a", "128k",
-      "-shortest",
       finalPath,
     ];
     runFFmpeg(ffmpeg, audioArgs);
   } else {
-    // No audio — just copy video
-    runFFmpeg(ffmpeg, ["-y", "-i", videoWithCaptions, "-c", "copy", finalPath]);
+    // No audio — transcode video
+    runFFmpeg(ffmpeg, ["-y", "-i", videoWithCaptions, "-c:v", "libx264", "-preset", "fast", "-crf", "20", finalPath]);
   }
 
   // Clean up intermediates unless requested to keep
   if (!config.keep_intermediates) {
-    for (const f of [introPath, outroPath, combinedPath, concatPath]) {
+    for (const f of []) {
       try {
         const { unlinkSync } = await import("fs");
         if (existsSync(f)) unlinkSync(f);
@@ -182,7 +164,7 @@ interface TitleCardOptions {
 
 function generateTitleCard(ffmpeg: string, opts: TitleCardOptions): void {
   // Escape single quotes in text
-  const escTitle    = opts.title.replace(/'/g, "\\'").replace(/:/g, "\\:");
+  const escTitle = opts.title.replace(/'/g, "\\'").replace(/:/g, "\\:");
   const escSubtitle = opts.subtitle.replace(/'/g, "\\'").replace(/:/g, "\\:");
 
   const vf = [
@@ -195,9 +177,6 @@ function generateTitleCard(ffmpeg: string, opts: TitleCardOptions): void {
     "-y",
     "-f", "lavfi",
     "-i", `color=c=${opts.bgColor}:size=${opts.width}x${opts.height}:rate=${opts.fps}`,
-    "-vf",
-    `drawtext=text='${escTitle}':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h-text_h)/2-50:box=0,` +
-    `drawtext=text='${escSubtitle}':fontcolor=${opts.accentColor}:fontsize=32:x=(w-text_w)/2:y=(h-text_h)/2+40:box=0`,
     "-t", String(opts.duration),
     "-c:v", "libx264",
     "-preset", "fast",
@@ -214,7 +193,6 @@ function offsetCaptions(
   outputPath: string,
   offsetSeconds: number
 ): void {
-  const { readFileSync, writeFileSync } = require("fs");
   const content = readFileSync(inputPath, "utf-8") as string;
 
   const offsetted = content.replace(
@@ -226,9 +204,9 @@ function offsetCaptions(
         parseInt(s) * 1000 +
         parseInt(ms) +
         offsetSeconds * 1000;
-      const newH  = Math.floor(totalMs / 3600000);
-      const newM  = Math.floor((totalMs % 3600000) / 60000);
-      const newS  = Math.floor((totalMs % 60000) / 1000);
+      const newH = Math.floor(totalMs / 3600000);
+      const newM = Math.floor((totalMs % 3600000) / 60000);
+      const newS = Math.floor((totalMs % 60000) / 1000);
       const newMs = totalMs % 1000;
       return `${pad(newH)}:${pad(newM)}:${pad(newS)},${pad(newMs, 3)}`;
     }
