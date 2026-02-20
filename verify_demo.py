@@ -17,7 +17,7 @@ def run():
         video_source = page.locator("video source").get_attribute("src")
         print(f"Video source: {video_source}")
 
-        if "assets/walkthrough.mp4" in video_source:
+        if "assets/demo.mp4" in video_source:
             print("SUCCESS: Video source is correct.")
         else:
             print("FAILURE: Video source is incorrect.")
