@@ -1,0 +1,198 @@
+/**
+ * NCMEC XML Parser
+ *
+ * Parses NCMEC CyberTipline reports delivered in XML format
+ * via the NCMEC API. Maps XML fields to NcmecPdfParsed structure
+ * for uniform downstream processing.
+ */
+
+import type { NcmecPdfParsed, NcmecFileMeta } from "./ncmec_pdf.js";
+import type { Reporter } from "../models/index.js";
+
+// ── Lightweight XML value extractor (no external dep needed for known schema) ─
+
+function xmlText(xml: string, tag: string): string | undefined {
+  const pattern = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const m = pattern.exec(xml);
+  return m?.[1]?.trim() || undefined;
+}
+
+function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
+  const pattern = new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, "i");
+  return pattern.exec(xml)?.[1];
+}
+
+function xmlAll(xml: string, tag: string): string[] {
+  const pattern = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
+  return [...xml.matchAll(pattern)].map((m) => m[0]);
+}
+
+function parseXmlBoolean(val: string | undefined): { value: boolean; found: boolean } {
+  if (!val) return { value: false, found: false };
+  const norm = val.trim().toLowerCase();
+  return {
+    value: norm === "true" || norm === "yes" || norm === "1",
+    found: true,
+  };
+}
+
+// ── File entry parser ─────────────────────────────────────────────────────────
+
+function parseXmlFileEntry(fileXml: string): NcmecFileMeta {
+  const filename =
+    xmlText(fileXml, "FileName") ??
+    xmlText(fileXml, "OriginalFileName") ??
+    undefined;
+
+  const espViewedRaw = xmlText(fileXml, "ViewedByEsp") ?? xmlText(fileXml, "EspViewed");
+  const espViewedResult = parseXmlBoolean(espViewedRaw);
+
+  const publicRaw =
+    xmlText(fileXml, "PubliclyAvailable") ?? xmlText(fileXml, "IsPublic");
+  const publicResult = parseXmlBoolean(publicRaw);
+
+  const ext = filename?.split(".").pop()?.toLowerCase() ?? "";
+  let media_type: "image" | "video" | "document" | "other" = "other";
+  if (["jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "tiff"].includes(ext))
+    media_type = "image";
+  else if (["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v"].includes(ext))
+    media_type = "video";
+  else if (["pdf", "doc", "docx", "txt"].includes(ext)) media_type = "document";
+
+  return {
+    filename,
+    file_size: xmlText(fileXml, "FileSize"),
+    media_type,
+    esp_viewed: espViewedResult.value,
+    esp_viewed_missing: !espViewedResult.found,
+    esp_categorized_as:
+      xmlText(fileXml, "EspCategory") ??
+      xmlText(fileXml, "Classification") ??
+      undefined,
+    publicly_available: publicResult.value,
+    hash_md5: xmlText(fileXml, "MD5"),
+    hash_sha1: xmlText(fileXml, "SHA1") ?? xmlText(fileXml, "Sha1"),
+    hash_sha256: xmlText(fileXml, "SHA256") ?? xmlText(fileXml, "Sha256"),
+    photodna_hash: xmlText(fileXml, "PhotoDNA"),
+  };
+}
+
+// ── Main XML parser ───────────────────────────────────────────────────────────
+
+export function parseNcmecXml(xmlString: string): NcmecPdfParsed {
+  const ncmecTipNumber =
+    xmlText(xmlString, "TiplineNumber") ??
+    xmlText(xmlString, "ReportId") ??
+    xmlAttr(xmlString, "Report", "id") ??
+    undefined;
+
+  const urgentRaw =
+    xmlText(xmlString, "IsUrgent") ??
+    xmlText(xmlString, "Priority") ??
+    xmlAttr(xmlString, "Report", "urgent");
+  const ncmecUrgentFlag =
+    urgentRaw?.toLowerCase() === "true" ||
+    urgentRaw?.toLowerCase() === "yes" ||
+    urgentRaw === "1";
+
+  // Bundled report detection
+  const bundledCountRaw =
+    xmlText(xmlString, "BundledReportCount") ??
+    xmlText(xmlString, "IncidentCount");
+  const bundledCount = bundledCountRaw ? parseInt(bundledCountRaw, 10) : undefined;
+  const isBundled = !!(bundledCount && bundledCount > 1);
+
+  // Reporter / ESP
+  const espName =
+    xmlText(xmlString, "ReportingEspName") ??
+    xmlText(xmlString, "EspName") ??
+    xmlText(xmlString, "ReportingEntity");
+
+  const reporter: Reporter = {
+    type: "NCMEC",
+    esp_name: espName,
+    originating_country:
+      (xmlText(xmlString, "OriginCountry") ??
+        xmlText(xmlString, "Country"))?.slice(0, 2).toUpperCase() as
+        | `${string}${string}`
+        | undefined,
+  };
+
+  // Files
+  const fileEntries = [
+    ...xmlAll(xmlString, "FileDetails"),
+    ...xmlAll(xmlString, "File"),
+    ...xmlAll(xmlString, "Attachment"),
+  ];
+  const files: NcmecFileMeta[] =
+    fileEntries.length > 0
+      ? fileEntries.map(parseXmlFileEntry)
+      : []; // No files in tip (text-only report)
+
+  // Section-equivalent fields
+  const incidentDesc =
+    xmlText(xmlString, "IncidentDescription") ??
+    xmlText(xmlString, "Description") ??
+    xmlText(xmlString, "ContentDescription") ??
+    "";
+
+  const relatedTipNumbers = xmlAll(xmlString, "RelatedReport")
+    .map((r) => xmlText(r, "TiplineNumber") ?? "")
+    .filter(Boolean);
+
+  return {
+    ncmec_tip_number: ncmecTipNumber,
+    ncmec_urgent_flag: ncmecUrgentFlag,
+    is_bundled: isBundled,
+    bundled_incident_count: bundledCount,
+    reporter,
+    section_a: {
+      esp_name: espName,
+      incident_description: incidentDesc,
+      incident_time:
+        xmlText(xmlString, "IncidentDateTime") ??
+        xmlText(xmlString, "DateOfIncident") ??
+        undefined,
+      subject_email:
+        xmlText(xmlString, "SubjectEmail") ??
+        xmlText(xmlString, "EmailAddress") ??
+        undefined,
+      subject_username:
+        xmlText(xmlString, "SubjectUsername") ??
+        xmlText(xmlString, "Username") ??
+        undefined,
+      subject_ip:
+        xmlText(xmlString, "SubjectIpAddress") ??
+        xmlText(xmlString, "IpAddress") ??
+        undefined,
+      files,
+    },
+    section_b: {
+      country:
+        xmlText(xmlString, "IpCountry") ??
+        xmlText(xmlString, "GeolocationCountry") ??
+        undefined,
+      city:
+        xmlText(xmlString, "IpCity") ??
+        xmlText(xmlString, "GeolocationCity") ??
+        undefined,
+      region:
+        xmlText(xmlString, "IpState") ??
+        xmlText(xmlString, "GeolocationRegion") ??
+        undefined,
+      isp: xmlText(xmlString, "Isp") ?? xmlText(xmlString, "IspName") ?? undefined,
+      ip_geolocation:
+        xmlText(xmlString, "Geolocation") ??
+        xmlText(xmlString, "GeoData") ??
+        undefined,
+    },
+    section_c: {
+      additional_info:
+        xmlText(xmlString, "AdditionalInformation") ??
+        xmlText(xmlString, "Notes") ??
+        undefined,
+      related_tip_numbers: relatedTipNumbers,
+      notes: xmlText(xmlString, "InvestigatorNotes") ?? undefined,
+    },
+  };
+}

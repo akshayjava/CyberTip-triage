@@ -1,0 +1,146 @@
+{
+  "title": "CyberTip Triage — Investigator Demo",
+  "description": "90-second product demo for ICAC task forces showing AI-powered tip prioritization, Wilson compliance automation, and warrant workflow.",
+  "total_duration_s": 92,
+  "target_audience": "ICAC investigators and supervisors evaluating triage tools",
+  "cues": [
+    {
+      "time_s": 0,
+      "duration_s": 8,
+      "narration": "Your task force received four thousand NCMEC tips last quarter. Most were triaged manually. CyberTip Triage changes that.",
+      "action": {
+        "type": "navigate",
+        "target": "http://localhost:3000/dashboard"
+      },
+      "caption": "The tip volume problem",
+      "badge": "OVERVIEW"
+    },
+    {
+      "time_s": 8,
+      "duration_s": 7,
+      "narration": "The dashboard surfaces what matters immediately. Stats cards show your current queue depth, pending warrants, and active P1 criticals.",
+      "action": {
+        "type": "hover",
+        "target": ".stats-card"
+      },
+      "caption": "Real-time operational picture"
+    },
+    {
+      "time_s": 15,
+      "duration_s": 7,
+      "narration": "Every incoming tip is scored by AI and assigned a priority tier — from standard up to P1 Critical for active victim situations.",
+      "action": {
+        "type": "navigate",
+        "target": "http://localhost:3000/dashboard#queue"
+      },
+      "badge": "AI SCORING"
+    },
+    {
+      "time_s": 22,
+      "duration_s": 6,
+      "narration": "Filter to critical tier only. These are tips where victim crisis indicators were detected.",
+      "action": {
+        "type": "click",
+        "target": "#tier-filter-CRITICAL"
+      },
+      "caption": "One-click critical filter"
+    },
+    {
+      "time_s": 28,
+      "duration_s": 7,
+      "narration": "Select the first tip. The detail pane shows the NCMEC report data, AI analysis, and circuit-specific legal guidance.",
+      "action": {
+        "type": "click",
+        "target": ".tip-row:first-child"
+      }
+    },
+    {
+      "time_s": 35,
+      "duration_s": 7,
+      "narration": "The tier badge reflects the scoring rationale — here, age indicators and distress language elevated this to P1 Critical.",
+      "action": {
+        "type": "highlight",
+        "target": ".tier-badge"
+      },
+      "badge": "PRIORITY TIER"
+    },
+    {
+      "time_s": 42,
+      "duration_s": 8,
+      "narration": "Now the compliance layer. This file is blocked. The ESP did not view it before reporting, so under Wilson, you cannot access it without a warrant.",
+      "action": {
+        "type": "highlight",
+        "target": ".file-blocked"
+      },
+      "caption": "Wilson v. Jessup compliance",
+      "badge": "4TH AMENDMENT"
+    },
+    {
+      "time_s": 50,
+      "duration_s": 6,
+      "narration": "The system enforces this automatically. No investigator can accidentally open a blocked file.",
+      "action": {
+        "type": "hover",
+        "target": ".file-blocked"
+      }
+    },
+    {
+      "time_s": 56,
+      "duration_s": 7,
+      "narration": "Legal notes are generated per tip, citing your circuit's case law. This language drops directly into your warrant application.",
+      "action": {
+        "type": "highlight",
+        "target": ".legal-note"
+      },
+      "badge": "LEGAL GUIDANCE"
+    },
+    {
+      "time_s": 63,
+      "duration_s": 7,
+      "narration": "Click apply for warrant. The system pre-populates the affidavit template and tracks approval status in real time.",
+      "action": {
+        "type": "click",
+        "target": ".warrant-btn"
+      },
+      "caption": "Integrated warrant workflow"
+    },
+    {
+      "time_s": 70,
+      "duration_s": 6,
+      "narration": "Once the judge grants the warrant, blocked files unblock automatically. Full chain of custody is logged.",
+      "action": {
+        "type": "wait",
+        "target": ".tip-detail-pane"
+      },
+      "badge": "AUTO-UNBLOCK"
+    },
+    {
+      "time_s": 76,
+      "duration_s": 7,
+      "narration": "Notice this cluster alert. Forty-three tips reference the same viral image. The system deduplicates them into a single bundle.",
+      "action": {
+        "type": "highlight",
+        "target": ".cluster-alert"
+      },
+      "caption": "Bundle deduplication",
+      "badge": "CLUSTERING"
+    },
+    {
+      "time_s": 83,
+      "duration_s": 9,
+      "narration": "Less noise, fewer compliance risks, victims identified faster. CyberTip Triage — built for the work you actually do.",
+      "action": {
+        "type": "scroll",
+        "target": ".stats-card",
+        "scrollPx": -500
+      },
+      "caption": "CyberTip Triage"
+    }
+  ],
+  "metadata": {
+    "product": "CyberTip Triage",
+    "version": "1.0.0-demo",
+    "generated_at": "2026-02-20T06:26:24.145Z",
+    "model_used": "claude-opus-4-6"
+  }
+}

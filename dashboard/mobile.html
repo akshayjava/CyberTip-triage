@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>CyberTip On-Call</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --border:   #334155;
+      --text:     #e2e8f0;
+      --muted:    #94a3b8;
+      --dim:      #475569;
+      --red:      #ef4444;
+      --orange:   #f97316;
+      --purple:   #a855f7;
+      --blue:     #3b82f6;
+      --green:    #22c55e;
+      --yellow:   #eab308;
+      --red-bg:   #7f1d1d;
+      --red-dim:  #450a0a;
+    }
+    html, body, #root { height: 100%; background: var(--bg); color: var(--text); }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    * { -webkit-tap-highlight-color: transparent; }
+
+    /* Tier colors */
+    .t-IMMEDIATE { border-left: 4px solid var(--red); }
+    .t-URGENT    { border-left: 4px solid var(--orange); }
+    .t-PAUSED    { border-left: 4px solid var(--purple); }
+    .t-STANDARD  { border-left: 4px solid var(--blue); }
+    .t-MONITOR   { border-left: 4px solid var(--dim); }
+    .t-pending   { border-left: 4px solid var(--dim); }
+
+    /* Score badge colors */
+    .b-IMMEDIATE { background: var(--red-bg); color: #fca5a5; }
+    .b-URGENT    { background: #7c2d12; color: #fdba74; }
+    .b-PAUSED    { background: #4c1d95; color: #d8b4fe; }
+    .b-STANDARD  { background: #1e3a5f; color: #93c5fd; }
+    .b-MONITOR   { background: #1f2937; color: #9ca3af; }
+    .b-pending   { background: #1f2937; color: #9ca3af; }
+
+    /* Crisis animation */
+    @keyframes pulse-crisis { 0%,100%{background:#7f1d1d;} 50%{background:#991b1b;} }
+    .crisis-anim { animation: pulse-crisis 1.4s ease-in-out infinite; }
+
+    /* Blocked file */
+    .file-blocked { background: #1c0a0a; border: 1px solid #7f1d1d; }
+    .file-open    { background: #0a1c0a; border: 1px solid #14532d; }
+    .file-pending { background: #1a1a0a; border: 1px solid #713f12; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+    /* Bottom nav safe area */
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .safe-top    { padding-top: env(safe-area-inset-top, 0px); }
+
+    /* Touch-friendly tap targets */
+    .tap { min-height: 44px; display: flex; align-items: center; }
+
+    /* Slide-up sheet */
+    @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .slide-up { animation: slide-up 0.25s ease-out; }
+
+    /* Button active state */
+    button:active { opacity: 0.7; }
+
+    /* Score bar */
+    .score-bar-track { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
+    .score-bar-fill  { height: 3px; border-radius: 2px; transition: width 0.4s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000/api'
+  : `${window.location.protocol}//${window.location.hostname}:3000/api`;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+const ago = (iso) => {
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+};
+
+const scoreColor = (s) =>
+  s >= 85 ? '#ef4444' : s >= 60 ? '#f97316' : s >= 30 ? '#3b82f6' : '#6b7280';
+
+const tierOrder = ['IMMEDIATE','URGENT','PAUSED','STANDARD','MONITOR','pending'];
+
+// ── Crisis Banner ─────────────────────────────────────────────────────────────
+
+function CrisisBanner({ tips, onTap }) {
+  if (!tips.length) return null;
+  return (
+    <div
+      className="crisis-anim px-4 py-3 cursor-pointer tap"
+      onClick={() => onTap(tips[0])}
+    >
+      <span className="text-lg mr-2">🚨</span>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-red-200 text-sm">
+          VICTIM CRISIS — {tips.length} ALERT{tips.length > 1 ? 'S' : ''}
+        </div>
+        <div className="text-red-300 text-xs truncate">
+          {tips[0].priority?.victim_crisis_alert_text?.slice(0, 80) ?? 'Tap to review'}
+        </div>
+      </div>
+      <span className="text-red-400 ml-2 text-lg">›</span>
+    </div>
+  );
+}
+
+// ── Stats Row ─────────────────────────────────────────────────────────────────
+
+function StatsRow({ queue }) {
+  const counts = { IMMEDIATE: 0, URGENT: 0, PAUSED: 0, STANDARD: 0, MONITOR: 0 };
+  for (const [tier, tips] of Object.entries(queue)) {
+    if (counts[tier] !== undefined) counts[tier] = tips.length;
+  }
+  const statItems = [
+    { label: '🔴', value: counts.IMMEDIATE, color: '#ef4444', tier: 'IMMEDIATE' },
+    { label: '🟠', value: counts.URGENT,    color: '#f97316', tier: 'URGENT' },
+    { label: '🟣', value: counts.PAUSED,    color: '#a855f7', tier: 'PAUSED' },
+    { label: '🔵', value: counts.STANDARD,  color: '#3b82f6', tier: 'STANDARD' },
+    { label: '⚫', value: counts.MONITOR,   color: '#6b7280', tier: 'MONITOR' },
+  ];
+  return (
+    <div style={{ background: '#0f172a', borderBottom: '1px solid var(--border)' }}
+         className="flex">
+      {statItems.map(s => (
+        <div key={s.tier} className="flex-1 text-center py-2">
+          <div className="text-sm">{s.label}</div>
+          <div className="font-bold text-sm" style={{ color: s.color }}>{s.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Tip Card (mobile optimized) ───────────────────────────────────────────────
+
+function TipCard({ tip, onTap }) {
+  const tier  = tip.priority?.tier ?? 'pending';
+  const score = tip.priority?.score ?? 0;
+  const cat   = tip.classification?.offense_category?.replace(/_/g,' ') ?? 'Unclassified';
+  const hasBundle  = tip.is_bundled && tip.bundled_incident_count > 1;
+  const hasCrisis  = tip.priority?.victim_crisis_alert;
+  const hasDecon   = tip.links?.deconfliction_matches?.some(m => m.active_investigation);
+  const hasAIG     = tip.classification?.aig_csam_flag;
+  const blockedFiles = (tip.files ?? []).filter(f => f.file_access_blocked).length;
+
+  return (
+    <div
+      className={`t-${tier} cursor-pointer mb-2 rounded-r`}
+      style={{ background: 'var(--surface)' }}
+      onClick={() => onTap(tip)}
+    >
+      <div className="p-3">
+        {/* Row 1: tier badge + ID + score */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`b-${tier} text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wide shrink-0`}>
+              {tier}
+            </span>
+            {hasCrisis && <span title="Crisis alert">🚨</span>}
+            {hasDecon  && <span title="Deconfliction" style={{color:'var(--purple)'}}>⚠</span>}
+            {hasAIG    && <span style={{color:'var(--yellow)',fontSize:'10px',fontWeight:'bold'}}>AIG</span>}
+            <span className="font-mono text-sm text-gray-300 truncate">
+              {tip.ncmec_tip_number ?? tip.tip_id.slice(0,8).toUpperCase()}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {score > 0 && (
+              <span className="font-bold text-sm" style={{ color: scoreColor(score) }}>{score}</span>
+            )}
+            <span className="text-xs" style={{color:'var(--dim)'}}>{ago(tip.received_at)}</span>
+            <span style={{color:'var(--dim)'}}>›</span>
+          </div>
+        </div>
+
+        {/* Row 2: offense category + metadata */}
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <span className="text-xs" style={{color:'var(--muted)'}}>{cat}</span>
+          {hasBundle && (
+            <span style={{background:'#1e293b',color:'#60a5fa',fontSize:'10px'}} className="px-1.5 py-0.5 rounded font-bold">
+              BUNDLE: {tip.bundled_incident_count?.toLocaleString()} reports
+            </span>
+          )}
+          {blockedFiles > 0 && (
+            <span style={{color:'var(--red)',fontSize:'10px'}} className="font-bold">
+              🔒 {blockedFiles} BLOCKED
+            </span>
+          )}
+          <span className="text-xs" style={{color:'var(--dim)'}}>
+            {tip.reporter?.esp_name ?? tip.reporter?.type ?? 'Unknown'}
+          </span>
+        </div>
+
+        {/* Score bar */}
+        {score > 0 && (
+          <div className="score-bar-track mt-2">
+            <div
+              className="score-bar-fill"
+              style={{ width: `${score}%`, background: scoreColor(score) }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tip Detail Sheet (slides up from bottom) ──────────────────────────────────
+
+function TipDetailSheet({ tip, onClose, onRefresh }) {
+  const [actionLoading, setActionLoading] = useState('');
+  const [tab, setTab] = useState('info');
+
+  const tier  = tip.priority?.tier ?? 'pending';
+  const score = tip.priority?.score ?? 0;
+  const p     = tip.priority;
+  const c     = tip.classification;
+  const e     = tip.extracted;
+  const blockedFiles = (tip.files ?? []).filter(f => f.file_access_blocked);
+  const hasDecon = (tip.links?.deconfliction_matches ?? []).filter(m => m.active_investigation);
+
+  const assignSelf = async () => {
+    setActionLoading('assign');
+    try {
+      await fetch(`${API}/tips/${tip.tip_id}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ investigator_id: 'on_call', investigator_name: 'On-Call Investigator' }),
+      });
+      onRefresh();
+    } finally { setActionLoading(''); }
+  };
+
+  const issuePreservation = async (id) => {
+    setActionLoading(`pres-${id}`);
+    try {
+      await fetch(`${API}/preservation/${id}/issue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved_by: 'on_call' }),
+      });
+      onRefresh();
+    } finally { setActionLoading(''); }
+  };
+
+  const updateWarrant = async (fileId, status) => {
+    setActionLoading(`warrant-${fileId}`);
+    try {
+      await fetch(`${API}/tips/${tip.tip_id}/warrant/${fileId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      onRefresh();
+    } finally { setActionLoading(''); }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', flexDirection: 'column',
+        background: 'rgba(0,0,0,0.7)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="slide-up safe-bottom"
+        style={{
+          marginTop: 'auto',
+          background: 'var(--bg)',
+          borderRadius: '16px 16px 0 0',
+          maxHeight: '92vh',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 4px' }}>
+          <div style={{ width: 36, height: 4, background: 'var(--dim)', borderRadius: 2 }} />
+        </div>
+
+        {/* Header */}
+        <div className="px-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`b-${tier} text-xs font-bold px-2 py-0.5 rounded uppercase`}>{tier}</span>
+                {tip.priority?.victim_crisis_alert && <span>🚨</span>}
+                {hasDecon.length > 0 && <span style={{color:'var(--purple)'}}>⚠ DECON</span>}
+              </div>
+              <div className="font-mono font-bold text-lg">
+                {tip.ncmec_tip_number ?? tip.tip_id.slice(0,8).toUpperCase()}
+              </div>
+              <div className="text-xs mt-0.5" style={{color:'var(--muted)'}}>
+                {c?.offense_category?.replace(/_/g,' ')} · {ago(tip.received_at)} · {tip.reporter?.esp_name ?? 'Unknown'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold" style={{ color: scoreColor(score) }}>{score}</div>
+              <div className="text-xs" style={{color:'var(--dim)'}}>score</div>
+            </div>
+          </div>
+
+          {/* Crisis alert */}
+          {p?.victim_crisis_alert && (
+            <div className="crisis-anim rounded p-2 mt-2 text-xs text-red-200">
+              🚨 <strong>VICTIM CRISIS:</strong> {p.victim_crisis_alert_text}
+            </div>
+          )}
+
+          {/* Deconfliction */}
+          {hasDecon.length > 0 && (
+            <div className="rounded p-2 mt-2 text-xs text-purple-200"
+                 style={{background:'rgba(76,29,149,0.4)',border:'1px solid #6d28d9'}}>
+              ⚠ <strong>DECONFLICTION:</strong> Active investigation by {hasDecon.map(d => d.agency_name).join(', ')} — await supervisor.
+            </div>
+          )}
+
+          {/* Recommended action */}
+          {p?.recommended_action && (
+            <div className="rounded p-2 mt-2 text-xs text-blue-200"
+                 style={{background:'rgba(29,78,216,0.2)',border:'1px solid #1d4ed8'}}>
+              <strong>ACTION:</strong> {p.recommended_action}
+            </div>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex" style={{borderBottom:'1px solid var(--border)',overflowX:'auto'}}>
+          {['info','files','preserve','audit'].map(t => (
+            <button
+              key={t}
+              className="px-4 py-2 text-sm shrink-0 capitalize"
+              style={{
+                borderBottom: tab === t ? '2px solid var(--blue)' : '2px solid transparent',
+                color: tab === t ? '#60a5fa' : 'var(--muted)',
+              }}
+              onClick={() => setTab(t)}
+            >
+              {t}
+              {t === 'files' && tip.files?.length ? ` (${tip.files.length})` : ''}
+              {t === 'preserve' && tip.preservation_requests?.length ? ` (${tip.preservation_requests.length})` : ''}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div style={{flex:1, overflowY:'auto', padding:'16px'}}>
+
+          {/* INFO TAB */}
+          {tab === 'info' && (
+            <div className="space-y-4">
+              {/* Assign button */}
+              {tip.status !== 'assigned' && tip.status !== 'in_investigation' && (
+                <button
+                  onClick={assignSelf}
+                  disabled={actionLoading === 'assign'}
+                  className="w-full py-3 rounded-lg font-bold text-sm tap"
+                  style={{
+                    background: 'var(--blue)',
+                    color: '#fff',
+                    justifyContent: 'center',
+                    opacity: actionLoading === 'assign' ? 0.6 : 1,
+                  }}
+                >
+                  {actionLoading === 'assign' ? 'Assigning...' : '✓ Assign to Me'}
+                </button>
+              )}
+              {(tip.status === 'assigned' || tip.status === 'in_investigation') && (
+                <div className="text-center py-2 rounded-lg text-sm"
+                     style={{background:'rgba(34,197,94,0.15)',color:'var(--green)',border:'1px solid rgba(34,197,94,0.3)'}}>
+                  ✓ Assigned — {tip.priority?.assigned_to ?? 'investigator'}
+                </div>
+              )}
+
+              {/* Score factors */}
+              {p?.scoring_factors?.filter(f => f.applied).length > 0 && (
+                <div>
+                  <div className="text-xs font-bold mb-2" style={{color:'var(--muted)'}}>PRIORITY FACTORS</div>
+                  {p.scoring_factors.filter(f => f.applied).map((f, i) => (
+                    <div key={i} className="flex justify-between text-xs py-1"
+                         style={{borderBottom:'1px solid var(--border)'}}>
+                      <span style={{color:'var(--text)'}}>{f.factor}</span>
+                      <span style={{color: f.contribution >= 0 ? 'var(--green)' : 'var(--red)', fontWeight:'bold'}}>
+                        {f.contribution >= 0 ? '+' : ''}{f.contribution}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Extracted entities */}
+              {e && (
+                <div>
+                  <div className="text-xs font-bold mb-2" style={{color:'var(--muted)'}}>ENTITIES EXTRACTED</div>
+                  {[
+                    ['Subjects',  e.subjects?.map(s => s.name ?? s.alias ?? JSON.stringify(s)).join(', ')],
+                    ['IPs',       e.ip_addresses?.join(', ')],
+                    ['Emails',    e.emails?.join(', ')],
+                    ['Usernames', e.usernames?.join(', ')],
+                    ['URLs',      e.urls?.slice(0,3).join(', ')],
+                    ['Victim age',e.victim_age_range],
+                  ].filter(([, v]) => v).map(([label, val]) => (
+                    <div key={label} className="text-xs py-1"
+                         style={{borderBottom:'1px solid var(--border)'}}>
+                      <span style={{color:'var(--muted)'}} className="mr-2">{label}:</span>
+                      <span style={{color:'var(--text)', wordBreak:'break-all'}}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Tip body */}
+              <div>
+                <div className="text-xs font-bold mb-2" style={{color:'var(--muted)'}}>TIP CONTENT</div>
+                <div className="text-xs rounded p-3"
+                     style={{background:'var(--surface)',color:'var(--muted)',lineHeight:1.6,maxHeight:200,overflowY:'auto'}}>
+                  {tip.normalized_body?.slice(0, 600) ?? 'No content'}
+                  {tip.normalized_body?.length > 600 ? '...' : ''}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* FILES TAB */}
+          {tab === 'files' && (
+            <div className="space-y-2">
+              {!tip.files?.length && (
+                <div className="text-center text-sm py-4" style={{color:'var(--dim)'}}>No files attached</div>
+              )}
+              {(tip.files ?? []).map(f => {
+                const blocked = f.file_access_blocked;
+                const cls = blocked
+                  ? (f.warrant_status === 'applied' ? 'file-pending' : 'file-blocked')
+                  : 'file-open';
+                return (
+                  <div key={f.file_id} className={`${cls} rounded p-3 text-xs`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span>{f.media_type === 'video' ? '🎬' : f.media_type === 'image' ? '🖼' : '📄'}</span>
+                          <span className="font-mono truncate" style={{maxWidth:140}}>
+                            {f.filename ?? f.file_id.slice(0,12)}
+                          </span>
+                          {f.ncmec_hash_match && <span style={{color:'var(--red)',fontWeight:'bold'}}>NCMEC✓</span>}
+                          {f.aig_csam_suspected && <span style={{color:'var(--yellow)',fontWeight:'bold'}}>AIG</span>}
+                          {f.project_vic_match && <span style={{color:'var(--orange)',fontWeight:'bold'}}>VIC✓</span>}
+                        </div>
+                        <div className="mt-1" style={{color:'var(--muted)'}}>
+                          {f.esp_viewed ? '👁 ESP viewed' : f.esp_viewed_missing ? '⚠ Flag missing' : '🚫 Not viewed'} ·
+                          {f.hash_sha256 ? ` SHA256: ${f.hash_sha256.slice(0,16)}…` : f.hash_md5 ? ` MD5: ${f.hash_md5.slice(0,16)}…` : ' No hash'}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {blocked ? (
+                          <span style={{color:'var(--red)'}}>🔒 BLOCKED</span>
+                        ) : (
+                          <span style={{color:'var(--green)'}}>🔓 Open</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Warrant controls */}
+                    {blocked && f.warrant_required && (
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span style={{color:'var(--muted)'}}>Warrant: {f.warrant_status}</span>
+                        {f.warrant_status === 'pending_application' && (
+                          <button
+                            onClick={() => updateWarrant(f.file_id, 'applied')}
+                            disabled={!!actionLoading}
+                            className="tap rounded px-2 py-1 text-xs"
+                            style={{background:'rgba(29,78,216,0.5)',color:'#93c5fd',minHeight:32}}
+                          >
+                            Mark Applied
+                          </button>
+                        )}
+                        {f.warrant_status === 'applied' && (
+                          <>
+                            <button
+                              onClick={() => updateWarrant(f.file_id, 'granted')}
+                              disabled={!!actionLoading}
+                              className="tap rounded px-2 py-1 text-xs"
+                              style={{background:'rgba(21,128,61,0.5)',color:'#86efac',minHeight:32}}
+                            >
+                              Granted ✓
+                            </button>
+                            <button
+                              onClick={() => updateWarrant(f.file_id, 'denied')}
+                              disabled={!!actionLoading}
+                              className="tap rounded px-2 py-1 text-xs"
+                              style={{background:'rgba(127,29,29,0.5)',color:'#fca5a5',minHeight:32}}
+                            >
+                              Denied ✗
+                            </button>
+                          </>
+                        )}
+                        {f.warrant_status === 'granted' && (
+                          <span style={{color:'var(--green)',fontWeight:'bold'}}>✓ Warrant granted</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* PRESERVATION TAB */}
+          {tab === 'preserve' && (
+            <div className="space-y-3">
+              {!tip.preservation_requests?.length && (
+                <div className="text-center py-4 text-sm" style={{color:'var(--dim)'}}>
+                  No preservation requests generated
+                </div>
+              )}
+              {(tip.preservation_requests ?? []).map(r => {
+                const daysLeft = r.deadline_for_esp_response
+                  ? Math.ceil((new Date(r.deadline_for_esp_response) - Date.now()) / 86400000)
+                  : null;
+                const urgent = daysLeft !== null && daysLeft <= 14;
+                return (
+                  <div key={r.request_id} className="rounded p-3 text-xs"
+                       style={{
+                         background: r.status === 'issued'
+                           ? 'rgba(21,128,61,0.15)'
+                           : 'rgba(161,98,7,0.15)',
+                         border: `1px solid ${r.status === 'issued' ? 'rgba(21,128,61,0.4)' : 'rgba(161,98,7,0.4)'}`,
+                       }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold"
+                            style={{color: r.status === 'issued' ? 'var(--green)' : 'var(--yellow)'}}>
+                        {r.esp_name}
+                      </span>
+                      <span className="rounded px-2 py-0.5"
+                            style={{
+                              background: r.status === 'issued' ? 'rgba(21,128,61,0.4)' : 'rgba(161,98,7,0.4)',
+                              color: r.status === 'issued' ? '#86efac' : '#fde68a',
+                            }}>
+                        {r.status}
+                      </span>
+                    </div>
+                    <div style={{color:'var(--muted)'}} className="mb-1">
+                      {r.account_identifiers?.join(', ')}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span style={{color: urgent ? 'var(--red)' : 'var(--dim)'}}>
+                        {daysLeft !== null ? `${daysLeft}d remaining` : 'No deadline set'}
+                      </span>
+                      {r.status === 'draft' && (
+                        <button
+                          onClick={() => issuePreservation(r.request_id)}
+                          disabled={actionLoading === `pres-${r.request_id}`}
+                          className="tap rounded px-3 py-1"
+                          style={{
+                            background:'rgba(161,98,7,0.5)',
+                            color:'#fde68a',
+                            minHeight:32,
+                            opacity: actionLoading === `pres-${r.request_id}` ? 0.6 : 1,
+                          }}
+                        >
+                          Issue Request
+                        </button>
+                      )}
+                    </div>
+                    {r.letter_text && (
+                      <details className="mt-2">
+                        <summary style={{color:'var(--blue)',cursor:'pointer'}}>View letter draft</summary>
+                        <pre className="mt-2 text-xs whitespace-pre-wrap"
+                             style={{color:'var(--muted)',maxHeight:200,overflowY:'auto',fontFamily:'monospace'}}>
+                          {r.letter_text.slice(0, 1000)}…
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* AUDIT TAB */}
+          {tab === 'audit' && (
+            <div className="space-y-2">
+              {!tip.audit_trail?.length && (
+                <div className="text-center py-4 text-sm" style={{color:'var(--dim)'}}>No audit entries yet</div>
+              )}
+              {(tip.audit_trail ?? []).map((e, i) => (
+                <div key={i} className="text-xs pl-3"
+                     style={{borderLeft:`2px solid ${e.status === 'success' ? 'var(--green)' : e.status === 'agent_error' ? 'var(--red)' : 'var(--yellow)'}`}}>
+                  <div className="flex items-center gap-2">
+                    <span style={{color:'var(--blue)',fontWeight:'bold'}}>{e.agent}</span>
+                    <span style={{color:'var(--dim)'}}>{ago(e.timestamp)}</span>
+                    {e.duration_ms && <span style={{color:'var(--dim)'}}>{e.duration_ms}ms</span>}
+                  </div>
+                  <div style={{color:'var(--muted)',marginTop:2}}>{e.summary}</div>
+                  {e.error_detail && <div style={{color:'var(--red)',marginTop:2}}>{e.error_detail}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Queue List ────────────────────────────────────────────────────────────────
+
+function QueueList({ queue, onTapTip }) {
+  const [filter, setFilter] = useState('ACTIVE');
+  const filters = ['ACTIVE', 'IMMEDIATE', 'URGENT', 'PAUSED', 'ALL'];
+
+  const allTips = Object.values(queue).flat();
+  const visibleTips = (() => {
+    if (filter === 'ACTIVE') return allTips.filter(t => ['IMMEDIATE','URGENT','PAUSED'].includes(t.priority?.tier));
+    if (filter === 'ALL')    return allTips;
+    return queue[filter] ?? [];
+  })().sort((a, b) => {
+    const ai = tierOrder.indexOf(a.priority?.tier ?? 'pending');
+    const bi = tierOrder.indexOf(b.priority?.tier ?? 'pending');
+    if (ai !== bi) return ai - bi;
+    return (b.priority?.score ?? 0) - (a.priority?.score ?? 0);
+  });
+
+  const countFor = (f) => {
+    if (f === 'ACTIVE') return allTips.filter(t => ['IMMEDIATE','URGENT','PAUSED'].includes(t.priority?.tier)).length;
+    if (f === 'ALL')    return allTips.length;
+    return queue[f]?.length ?? 0;
+  };
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Filter bar */}
+      <div className="flex" style={{borderBottom:'1px solid var(--border)',overflowX:'auto'}}>
+        {filters.map(f => (
+          <button
+            key={f}
+            className="shrink-0 px-4 py-2 text-xs font-bold tap"
+            style={{
+              borderBottom: filter === f ? '2px solid var(--blue)' : '2px solid transparent',
+              color: filter === f ? '#60a5fa' : 'var(--muted)',
+              justifyContent: 'center',
+            }}
+            onClick={() => setFilter(f)}
+          >
+            {f} ({countFor(f)})
+          </button>
+        ))}
+      </div>
+
+      {/* Tip list */}
+      <div style={{flex:1,overflowY:'auto',padding:'12px 12px 80px'}}>
+        {visibleTips.length === 0 ? (
+          <div className="text-center py-8" style={{color:'var(--dim)'}}>
+            {filter === 'ACTIVE' ? '✓ No IMMEDIATE or URGENT tips' : `No ${filter} tips`}
+          </div>
+        ) : (
+          visibleTips.map(tip => (
+            <TipCard key={tip.tip_id} tip={tip} onTap={onTapTip} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [queue,       setQueue]       = useState({});
+  const [stats,       setStats]       = useState(null);
+  const [selectedTip, setSelectedTip] = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const pollRef = useRef(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [qRes, sRes] = await Promise.all([
+        fetch(`${API}/queue`).then(r => r.json()),
+        fetch(`${API}/stats`).then(r => r.json()),
+      ]);
+      setQueue(qRes);
+      setStats(sRes);
+      setError(null);
+      setLastRefresh(new Date());
+    } catch (err) {
+      setError('Cannot reach API');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshTip = useCallback(async () => {
+    if (!selectedTip) return;
+    try {
+      const tip = await fetch(`${API}/tips/${selectedTip.tip_id}`).then(r => r.json());
+      setSelectedTip(tip);
+    } catch {}
+    fetchData();
+  }, [selectedTip, fetchData]);
+
+  useEffect(() => {
+    fetchData();
+    pollRef.current = setInterval(fetchData, 15000);
+    return () => clearInterval(pollRef.current);
+  }, [fetchData]);
+
+  const allTips    = Object.values(queue).flat();
+  const crisisTips = allTips.filter(t => t.priority?.victim_crisis_alert);
+
+  return (
+    <div className="safe-top" style={{height:'100%',display:'flex',flexDirection:'column'}}>
+      {/* Top bar */}
+      <div style={{background:'var(--surface)',borderBottom:'1px solid var(--border)',padding:'10px 16px'}}
+           className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span style={{fontSize:20}}>🛡</span>
+          <div>
+            <div className="font-bold text-sm">CyberTip On-Call</div>
+            <div className="text-xs" style={{color:'var(--dim)'}}>
+              {lastRefresh ? `Updated ${ago(lastRefresh.toISOString())}` : 'Loading...'}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {error && <span className="text-xs" style={{color:'var(--red)'}}>{error}</span>}
+          <button
+            onClick={fetchData}
+            style={{background:'var(--border)',color:'var(--muted)',padding:'6px 12px',borderRadius:6,fontSize:12}}
+            className="tap"
+          >
+            ↻
+          </button>
+        </div>
+      </div>
+
+      {/* Crisis banner */}
+      <CrisisBanner tips={crisisTips} onTap={setSelectedTip} />
+
+      {/* Stats row */}
+      <StatsRow queue={queue} />
+
+      {/* Queue list */}
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center" style={{color:'var(--dim)'}}>
+          <div>Loading tips...</div>
+        </div>
+      ) : (
+        <QueueList queue={queue} onTapTip={setSelectedTip} />
+      )}
+
+      {/* Bottom nav */}
+      <div className="safe-bottom" style={{background:'var(--surface)',borderTop:'1px solid var(--border)',padding:'8px 16px',display:'flex',justifyContent:'space-around'}}>
+        <a href="index.html" className="tap flex-col text-center"
+           style={{color:'var(--dim)',textDecoration:'none',justifyContent:'center',flexDirection:'column',display:'flex',alignItems:'center'}}>
+          <span style={{fontSize:20}}>🖥</span>
+          <span style={{fontSize:10,marginTop:2}}>Desktop</span>
+        </a>
+        <a href="status.html" className="tap flex-col text-center"
+           style={{color:'var(--dim)',textDecoration:'none',justifyContent:'center',flexDirection:'column',display:'flex',alignItems:'center'}}>
+          <span style={{fontSize:20}}>❤️</span>
+          <span style={{fontSize:10,marginTop:2}}>Status</span>
+        </a>
+        <a href="quickstart.html" className="tap flex-col text-center"
+           style={{color:'var(--dim)',textDecoration:'none',justifyContent:'center',flexDirection:'column',display:'flex',alignItems:'center'}}>
+          <span style={{fontSize:20}}>📋</span>
+          <span style={{fontSize:10,marginTop:2}}>Reference</span>
+        </a>
+      </div>
+
+      {/* Tip detail sheet */}
+      {selectedTip && (
+        <TipDetailSheet
+          tip={selectedTip}
+          onClose={() => setSelectedTip(null)}
+          onRefresh={refreshTip}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

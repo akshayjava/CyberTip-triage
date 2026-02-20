@@ -1,0 +1,32 @@
+NCMEC CyberTipline Report
+Report Number: TEST-SETUP-001
+NOT URGENT
+
+Section A: Electronic Service Provider Information
+Reporting ESP: SETUP_WIZARD_TEST
+Incident Date: 2026-02-20
+Subject Email: test.subject@example.invalid
+Subject Username: setup_test_user
+Subject IP Address: 192.0.2.100
+
+Uploaded File 1:
+Filename: test_file.jpg
+File Viewed by Reporting ESP: Yes
+Publicly Available: No
+MD5: aabbccddaabbccddaabbccddaabbccdd
+
+Description: [SETUP TEST TIP - NOT A REAL INCIDENT]
+This is an automatically generated test tip created during setup
+to verify that the processing pipeline is working correctly.
+This tip does not represent a real incident, a real subject, or
+real evidence. It should be scored as LOW priority with MONITOR tier.
+
+Section B: Geolocation
+Country: United States
+State: CA
+City: Test City
+ISP: Test ISP Inc.
+
+Section C: Additional Information
+Notes: Sample tip created by CyberTip Triage setup wizard.
+Delete this file from test-data/ids-stubs/ when done testing.

@@ -1,0 +1,145 @@
+{
+  "title": "CyberTip Triage — 90-Second Investigator Demo",
+  "description": "End-to-end walkthrough of AI-powered NCMEC CyberTip triage: priority scoring, Wilson compliance, warrant workflow, and bundle deduplication for ICAC task forces.",
+  "total_duration_s": 93,
+  "target_audience": "ICAC investigators and supervisors evaluating triage automation tools",
+  "cues": [
+    {
+      "time_s": 0,
+      "duration_s": 8,
+      "narration": "Your task force received twelve hundred NCMEC tips last quarter. Most were triaged by hand. CyberTip Triage changes that.",
+      "action": {
+        "type": "navigate",
+        "target": "http://localhost:3000/dashboard"
+      },
+      "caption": "The tip volume problem",
+      "badge": "PROBLEM"
+    },
+    {
+      "time_s": 8,
+      "duration_s": 7,
+      "narration": "The dashboard gives you a real-time picture. Stats cards show total tips, open cases, and average time-to-triage at a glance.",
+      "action": {
+        "type": "hover",
+        "target": ".stats-card"
+      },
+      "caption": "Live operational overview"
+    },
+    {
+      "time_s": 15,
+      "duration_s": 7,
+      "narration": "Every incoming tip is scored by AI and assigned a priority tier — from P1 Critical down to Standard — so your team works the right cases first.",
+      "action": {
+        "type": "highlight",
+        "target": ".tier-badge"
+      },
+      "badge": "AI PRIORITY SCORING"
+    },
+    {
+      "time_s": 22,
+      "duration_s": 7,
+      "narration": "Let's filter to critical tips only. These involve active victim crisis indicators flagged automatically during ingestion.",
+      "action": {
+        "type": "click",
+        "target": "#tier-filter-CRITICAL"
+      },
+      "caption": "Filter: P1 Critical"
+    },
+    {
+      "time_s": 29,
+      "duration_s": 6,
+      "narration": "Selecting the first tip opens the detail pane with the full NCMEC report, subject information, and legal analysis.",
+      "action": {
+        "type": "click",
+        "target": ".tip-row:first-child"
+      }
+    },
+    {
+      "time_s": 35,
+      "duration_s": 8,
+      "narration": "Notice this file is blocked. The ESP did not view the attached images, so under the Wilson ruling, the Fourth Amendment prohibits law enforcement from opening them without a warrant.",
+      "action": {
+        "type": "highlight",
+        "target": ".file-blocked"
+      },
+      "caption": "Wilson compliance — automatic file blocking",
+      "badge": "WILSON COMPLIANCE"
+    },
+    {
+      "time_s": 43,
+      "duration_s": 7,
+      "narration": "The system handles this automatically. No investigator can accidentally view a protected file. Your suppression risk drops to zero.",
+      "action": {
+        "type": "hover",
+        "target": ".file-blocked"
+      }
+    },
+    {
+      "time_s": 50,
+      "duration_s": 7,
+      "narration": "To unlock the file, click Apply for Warrant. The system pre-populates the affidavit template with tip details and routes it for judicial review.",
+      "action": {
+        "type": "click",
+        "target": ".warrant-btn"
+      },
+      "caption": "One-click warrant workflow",
+      "badge": "WARRANT WORKFLOW"
+    },
+    {
+      "time_s": 57,
+      "duration_s": 7,
+      "narration": "Once the warrant is granted, blocked files are automatically unblocked and the chain of custody is logged for prosecution.",
+      "action": {
+        "type": "wait",
+        "target": ".tip-detail-pane"
+      }
+    },
+    {
+      "time_s": 64,
+      "duration_s": 7,
+      "narration": "Each tip also includes circuit-specific legal guidance. The system knows whether you're in the Sixth Circuit or the Ninth and adjusts its analysis accordingly.",
+      "action": {
+        "type": "highlight",
+        "target": ".legal-note"
+      },
+      "badge": "LEGAL GUIDANCE"
+    },
+    {
+      "time_s": 71,
+      "duration_s": 6,
+      "narration": "Here's the cluster alert. Forty-seven tips traced back to one viral incident. The system bundles them so your team works one case, not forty-seven.",
+      "action": {
+        "type": "highlight",
+        "target": ".cluster-alert"
+      },
+      "caption": "Bundle deduplication",
+      "badge": "DEDUPLICATION"
+    },
+    {
+      "time_s": 77,
+      "duration_s": 7,
+      "narration": "Scroll down the queue and every row tells the same story — prioritized, compliant, and ready for investigation without manual sorting.",
+      "action": {
+        "type": "scroll",
+        "target": ".tip-row",
+        "scrollPx": 400
+      }
+    },
+    {
+      "time_s": 84,
+      "duration_s": 9,
+      "narration": "CyberTip Triage. Fewer missed victims, zero suppression risk, and your investigators focused where it matters. Request a task force pilot today.",
+      "action": {
+        "type": "screenshot",
+        "target": "http://localhost:3000/dashboard"
+      },
+      "caption": "CyberTip Triage — Built for ICAC"
+    }
+  ],
+  "metadata": {
+    "product": "CyberTip Triage",
+    "version": "1.0.0-demo",
+    "generated_at": "2026-02-20T06:04:19.338Z",
+    "model_used": "claude-opus-4-6"
+  }
+}

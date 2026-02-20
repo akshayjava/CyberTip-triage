@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CyberTip Triage — Demo Mode</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0e18; --surface: #111828; --border: #1e2a3a; --border2: #2a3a50;
+      --text: #c8d8e8; --muted: #5a7090; --accent: #2d8cf0;
+      --green: #22c55e; --yellow: #f59e0b; --red: #ef4444; --purple: #a855f7;
+      --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+    .demo-banner {
+      background: #1a1200; border-bottom: 2px solid var(--yellow);
+      padding: 10px 24px; text-align: center;
+      font-size: 12px; color: var(--yellow); font-family: var(--mono);
+      letter-spacing: 0.06em;
+    }
+
+    .topbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 32px; display: flex; align-items: center; gap: 12px;
+    }
+    .topbar h1 { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+    .topbar .right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+    .topbar a {
+      font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none;
+      border: 1px solid var(--border2); padding: 6px 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .topbar a:hover { border-color: var(--accent); color: var(--accent); }
+    .topbar a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .topbar a.primary:hover { background: #4da3ff; }
+
+    .layout { display: grid; grid-template-columns: 300px 1fr; height: calc(100vh - 86px); }
+
+    /* Queue */
+    .queue-pane { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    .pane-header {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .queue-list { flex: 1; overflow-y: auto; padding: 10px; }
+
+    .tip-card {
+      border-left: 4px solid var(--border2); background: var(--surface);
+      padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tip-card:hover { background: #151f30; }
+    .tip-card.selected { border-left-color: var(--accent); background: rgba(45,140,240,0.08); }
+    .tip-card.IMMEDIATE { border-left-color: var(--red); }
+    .tip-card.URGENT { border-left-color: var(--yellow); }
+    .tip-card.PAUSED { border-left-color: var(--purple); }
+
+    .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .tier-tag {
+      font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 6px; letter-spacing: 0.08em;
+    }
+    .tier-tag.IMMEDIATE { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .tier-tag.URGENT { background: rgba(245,158,11,0.2); color: #fcd34d; }
+    .tier-tag.PAUSED { background: rgba(168,85,247,0.2); color: #d8b4fe; }
+    .tier-tag.STANDARD { background: rgba(45,140,240,0.2); color: #93c5fd; }
+    .tip-id { font-family: var(--mono); font-size: 12px; color: #e8f4ff; }
+    .tip-score { font-family: var(--mono); font-size: 13px; font-weight: 600; margin-left: auto; }
+    .IMMEDIATE .tip-score { color: var(--red); }
+    .URGENT .tip-score { color: var(--yellow); }
+    .PAUSED .tip-score { color: var(--purple); }
+    .card-sub { font-size: 11px; color: var(--muted); }
+    .score-bar { height: 2px; background: var(--border); margin-top: 8px; }
+    .score-fill { height: 100%; background: var(--red); transition: width 0.5s; }
+    .URGENT .score-fill { background: var(--yellow); }
+    .PAUSED .score-fill { background: var(--purple); }
+    .STANDARD .score-fill { background: var(--accent); }
+
+    /* Detail */
+    .detail-pane { display: flex; flex-direction: column; overflow: hidden; }
+    .detail-header {
+      padding: 18px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface); display: flex; align-items: flex-start; gap: 16px;
+    }
+    .detail-id { font-family: var(--mono); font-size: 20px; color: #e8f4ff; font-weight: 600; }
+    .detail-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .detail-score { margin-left: auto; text-align: right; }
+    .detail-score-num { font-family: var(--mono); font-size: 32px; font-weight: 600; color: var(--red); }
+    .detail-score-label { font-size: 11px; color: var(--muted); }
+
+    .action-bar {
+      padding: 12px 24px; border-bottom: 1px solid var(--border);
+      background: rgba(45,140,240,0.06);
+      font-size: 13px; color: #93c5fd;
+    }
+    .action-bar strong { color: var(--accent); }
+
+    .crisis-bar {
+      padding: 10px 24px; background: #7f1d1d;
+      font-size: 13px; color: #fca5a5; font-weight: 500;
+    }
+
+    .detail-body { flex: 1; overflow-y: auto; padding: 24px; }
+
+    .tab-row { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .tab {
+      padding: 10px 16px; font-size: 13px; color: var(--muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fade 0.2s ease; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+    .card-box { background: var(--surface); border: 1px solid var(--border); padding: 16px; margin-bottom: 16px; }
+    .box-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+    .box-value { font-size: 14px; color: #e8f4ff; font-weight: 500; }
+    .box-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .flag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .flag { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 2px; }
+    .flag.red { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .flag.yellow { background: rgba(245,158,11,0.2); color: #fcd34d; }
+    .flag.blue { background: rgba(45,140,240,0.2); color: #93c5fd; }
+    .flag.gray { background: var(--border2); color: var(--muted); }
+
+    .file-row {
+      padding: 10px 14px; margin-bottom: 6px;
+      border-left: 3px solid var(--border2); background: var(--surface);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .file-row.blocked { border-left-color: var(--red); background: #1c0a0a; }
+    .file-row.open { border-left-color: var(--green); background: #0a1c0a; }
+    .file-name { font-family: var(--mono); font-size: 12px; flex: 1; }
+    .file-status { font-size: 11px; font-weight: 600; }
+    .file-status.blocked { color: var(--red); }
+    .file-status.open { color: var(--green); }
+
+    .factor-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .factor-row:last-child { border: none; }
+    .factor-pts { font-family: var(--mono); color: var(--green); }
+
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
+    .empty-state .icon { font-size: 40px; margin-bottom: 16px; }
+
+    /* Callout annotations for demo */
+    .demo-callout {
+      background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+      padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: #fbbf24;
+      line-height: 1.5;
+    }
+    .demo-callout::before { content: '💡 '; }
+  </style>
+</head>
+<body>
+
+<div class="demo-banner">⚠ DEMO MODE — All data is synthetic. No real tips. No real credentials required. <a href="/setup" style="color:inherit;font-weight:600;margin-left:16px">→ Run Setup Wizard to connect real data</a></div>
+
+<div class="topbar">
+  <span>🛡</span>
+  <h1>CyberTip Triage — Demo</h1>
+  <div class="right">
+    <a href="/status">System Status</a>
+    <a href="/setup" class="primary">Begin Setup →</a>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Queue -->
+  <div class="queue-pane">
+    <div class="pane-header">
+      <span>Triage Queue</span>
+      <span id="queue-count">6 tips</span>
+    </div>
+    <div class="queue-list" id="queue-list"></div>
+  </div>
+
+  <!-- Detail -->
+  <div class="detail-pane" id="detail-pane">
+    <div class="empty-state" id="empty-state">
+      <div class="icon">🛡</div>
+      <div style="font-size:15px;font-weight:500;margin-bottom:6px">Select a tip to review</div>
+      <div style="font-size:13px">Click any tip in the queue to see the full analysis</div>
+    </div>
+    <div id="tip-detail" style="display:none;flex:1;flex-direction:column;overflow:hidden"></div>
+  </div>
+</div>
+
+<script>
+// ── Demo data — 6 realistic synthetic tips ───────────────────────────────────
+
+const DEMO_TIPS = [
+  {
+    tip_id: 'TIP-2024-00441',
+    tier: 'IMMEDIATE',
+    score: 97,
+    offense: 'SEXTORTION',
+    esp: 'Instagram',
+    time: '14 min ago',
+    crisis: true,
+    files: [{ name: 'conversation_log.txt', status: 'open', hash: false }],
+    body: `A 15-year-old female reported being threatened by a male subject she met on Instagram. Subject obtained intimate photos through deception and is now demanding additional images or money. Victim stated "I want to die, I can't let my parents find out about this." Subject's Instagram handle: @shadow_real2024. Last IP: 71.241.18.102. Victim identified suspect as attending the same school.`,
+    action: 'Dispatch victim crisis intervention NOW. Preserve Instagram data — 30-day window. Contact school resource officer for subject identification.',
+    factors: [
+      { label: 'Confirmed minor victim (15)', pts: 30 },
+      { label: 'Victim crisis indicators — suicidal ideation', pts: 30 },
+      { label: 'Active ongoing offense', pts: 20 },
+      { label: 'ESP credibility (Instagram)', pts: 10 },
+      { label: 'Urgency indicators present', pts: 7 },
+    ],
+    flags: ['VICTIM IN CRISIS', 'SEXTORTION', 'ACTIVE OFFENSE'],
+    entities: ['@shadow_real2024 (Instagram)', '71.241.18.102', 'Lincoln High School (venue)'],
+    legal: 'File content accessible — Instagram confirmed human reviewer viewed prior to report.',
+    statutes: ['18 U.S.C. § 2252A', '18 U.S.C. § 2422'],
+    routing: 'ICAC Task Force',
+    preservation_deadline: 30,
+  },
+  {
+    tip_id: 'TIP-2024-00438',
+    tier: 'IMMEDIATE',
+    score: 91,
+    offense: 'CSAM',
+    esp: 'Meta (Facebook)',
+    time: '1 hr ago',
+    crisis: false,
+    files: [
+      { name: 'IMG_4421.jpg', status: 'open', hash: true, source: 'NCMEC' },
+      { name: 'VID_0082.mp4', status: 'blocked', hash: false },
+    ],
+    body: `User uploaded two files to a private group. File IMG_4421.jpg matched NCMEC's PhotoDNA hash database with 100% confidence. Second file VID_0082.mp4 was not reviewed by Facebook human reviewers prior to reporting. Subject email: jsmith_real@protonmail.com. Account created 3 days ago.`,
+    action: 'Apply for warrant on blocked video (VID_0082.mp4). Hash match on image is probable cause. Subpoena Protonmail for jsmith_real account records.',
+    factors: [
+      { label: 'CSAM hash match (NCMEC)', pts: 25 },
+      { label: 'IWF match (additive)', pts: 10 },
+      { label: 'ESP credibility (Meta)', pts: 10 },
+      { label: 'Actionable identifiers', pts: 10 },
+    ],
+    flags: ['NCMEC HASH MATCH', 'IWF MATCH', 'WARRANT REQUIRED (1 file)'],
+    entities: ['jsmith_real@protonmail.com', '74.101.22.34 (Protonmail IP)', 'Facebook group ID: 8821994'],
+    legal: 'IMG_4421.jpg accessible — Meta ESP viewed. VID_0082.mp4 BLOCKED — warrant required (Wilson, 9th Cir. 2021). Warrant not yet applied.',
+    statutes: ['18 U.S.C. § 2252A', '18 U.S.C. § 2258A'],
+    routing: 'ICAC Task Force / FBI CEOS',
+    preservation_deadline: 90,
+  },
+  {
+    tip_id: 'TIP-2024-00435',
+    tier: 'URGENT',
+    score: 74,
+    offense: 'CHILD_GROOMING',
+    esp: 'Roblox',
+    time: '3 hrs ago',
+    crisis: false,
+    files: [{ name: 'chat_export.txt', status: 'open', hash: false }],
+    body: `Parent reported that a 12-year-old's Roblox account received messages from an adult male attempting to move conversation to Discord. Suspect used Roblox username "BlueStar991" and asked victim to send photos. Parent screenshotted conversations. Subject offered Robux (in-game currency) in exchange for photos. Meeting has NOT been arranged yet.`,
+    action: 'Subpoena Roblox for BlueStar991 account info — 90-day retention. Check if Discord account identified. Search case database for BlueStar991.',
+    factors: [
+      { label: 'Confirmed minor victim (12)', pts: 30 },
+      { label: 'Active grooming in progress', pts: 20 },
+      { label: 'Gaming platform vector', pts: 10 },
+      { label: 'Actionable identifiers', pts: 10 },
+      { label: 'No meeting arranged', pts: -5 },
+    ],
+    flags: ['MINOR VICTIM (12)', 'GAMING PLATFORM', 'ACTIVE GROOMING'],
+    entities: ['BlueStar991 (Roblox)', 'Roblox game ID: 14225566', 'Discord (referenced)'],
+    legal: 'Chat export accessible — Roblox confirmed content was reviewed by trust & safety team before reporting.',
+    statutes: ['18 U.S.C. § 2422(b)'],
+    routing: 'ICAC Task Force',
+    preservation_deadline: 90,
+  },
+  {
+    tip_id: 'TIP-2024-00433',
+    tier: 'URGENT',
+    score: 66,
+    offense: 'CSAM',
+    esp: 'Google',
+    time: '5 hrs ago',
+    crisis: false,
+    files: [
+      { name: 'photo_001.jpg', status: 'blocked', hash: false },
+      { name: 'photo_002.jpg', status: 'blocked', hash: false },
+      { name: 'photo_003.jpg', status: 'blocked', hash: false },
+    ],
+    body: `Google PhotoDNA flagged three images uploaded to Google Photos by account holder mike.chen.8821@gmail.com. ESP did not view the images prior to reporting — automated hash detection only. Account has been active for 8 years with prior clean history. Subject IP during upload: 98.22.141.33. Chicago, IL.`,
+    action: 'Apply for warrant on all 3 blocked files — PhotoDNA alone is probable cause in this circuit. Request preservation letter to Google (180 days). Run IP through RISSafe.',
+    factors: [
+      { label: 'PhotoDNA match (automated)', pts: 25 },
+      { label: 'All files blocked — warrants required', pts: 0 },
+      { label: 'Actionable identifiers (email, IP)', pts: 10 },
+      { label: 'ESP credibility (Google)', pts: 10 },
+    ],
+    flags: ['PHOTODNA MATCH', 'ALL FILES BLOCKED', '3 WARRANTS REQUIRED'],
+    entities: ['mike.chen.8821@gmail.com', '98.22.141.33 (Chicago, IL)', 'Google Photos album ID: Pk9Qmr'],
+    legal: 'ALL 3 FILES BLOCKED — Google did not view files before reporting (automated hash-only detection). Wilson Ruling applies. Warrants required for all files before access.',
+    statutes: ['18 U.S.C. § 2252A'],
+    routing: 'ICAC Task Force',
+    preservation_deadline: 180,
+  },
+  {
+    tip_id: 'TIP-2024-00429',
+    tier: 'PAUSED',
+    score: 88,
+    offense: 'CSAM',
+    esp: 'Discord',
+    time: '8 hrs ago',
+    crisis: false,
+    files: [{ name: 'server_export.zip', status: 'open', hash: true, source: 'NCMEC + IWF' }],
+    body: `Discord trust & safety team reported a server sharing CSAM content. Hash matches found in NCMEC and IWF databases. Subject username: DarkStar_443. Server had 22 members. However, de-confliction check shows FBI has an active undercover operation targeting this server.`,
+    action: '⚠ PAUSED — Active FBI undercover operation. Contact SA Rodriguez (FBI Sacramento, 916-555-0100) before ANY action. Do not subpoena Discord. Do not contact subjects.',
+    factors: [
+      { label: 'NCMEC + IWF hash match', pts: 35 },
+      { label: 'Multiple victims / server', pts: 15 },
+      { label: 'Deconfliction: PAUSED', pts: 0 },
+    ],
+    flags: ['DECONFLICTION CONFLICT', 'FBI ACTIVE CASE', 'DO NOT CONTACT SUBJECT'],
+    entities: ['DarkStar_443 (Discord)', '22 server members', 'Discord server ID: 9981224'],
+    legal: 'File accessible — Discord viewed. HOWEVER: Do not access or view any content without FBI coordination. Active UC operation.',
+    statutes: ['18 U.S.C. § 2252A'],
+    routing: 'PAUSED — Supervisor coordinates with FBI',
+    deconfliction: { agency: 'FBI Sacramento', contact: 'SA Rodriguez', phone: '916-555-0100 (demo)' },
+    preservation_deadline: 30,
+  },
+  {
+    tip_id: 'TIP-2024-00422',
+    tier: 'URGENT',
+    score: 71,
+    offense: 'CSAM',
+    esp: 'NCMEC (AIG)',
+    time: '12 hrs ago',
+    crisis: false,
+    files: [{ name: 'generated_image.png', status: 'open', hash: false, aig: true }],
+    body: `Tip received via public web form. Reporter submitted URL to a public forum hosting what appears to be AI-generated sexual imagery of minors. C2PA metadata absent. Image shows visual artifacts consistent with diffusion model generation. No hash match in existing databases (expected — synthetic content). Subject IP: 185.220.101.45 (Tor exit node).`,
+    action: 'Refer to FBI CEOS for AIG-CSAM prosecution. Preserve forum URL and capture site evidence before removal. Tor exit node — IP subpoena will not yield subject identity.',
+    factors: [
+      { label: 'AIG-CSAM detected (+10, never reduces score)', pts: 10 },
+      { label: 'Suspected minor victim', pts: 20 },
+      { label: 'Public URL — potential wide distribution', pts: 20 },
+      { label: 'Tor IP — identity obscured', pts: -5 },
+    ],
+    flags: ['AIG-CSAM DETECTED', '18 U.S.C. § 1466A APPLIES', 'TOR EXIT NODE'],
+    entities: ['185.220.101.45 (Tor exit node)', 'forum.example.onion (dark web)'],
+    legal: 'File accessible — public URL. Note: AIG-CSAM is illegal under 18 U.S.C. § 1466A regardless of no real victim. Severity is NOT reduced because content is AI-generated.',
+    statutes: ['18 U.S.C. § 1466A', '18 U.S.C. § 2256'],
+    routing: 'FBI CEOS',
+    preservation_deadline: null,
+  },
+];
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+let selectedTip = null;
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  list.innerHTML = DEMO_TIPS.map(t => `
+    <div class="tip-card ${t.tier} ${selectedTip?.tip_id === t.tip_id ? 'selected' : ''}" onclick="selectTip('${t.tip_id}')">
+      <div class="card-top">
+        <span class="tier-tag ${t.tier}">${t.tier}</span>
+        <span class="tip-id">${t.tip_id}</span>
+        <span class="tip-score">${t.score}</span>
+      </div>
+      <div class="card-sub">${t.offense.replace(/_/g,' ')} · ${t.esp} · ${t.time}</div>
+      <div class="score-bar"><div class="score-fill" style="width:${t.score}%"></div></div>
+    </div>`).join('');
+}
+
+function selectTip(id) {
+  selectedTip = DEMO_TIPS.find(t => t.tip_id === id);
+  renderQueue();
+  renderDetail();
+}
+
+function renderDetail() {
+  const t = selectedTip;
+  if (!t) return;
+
+  document.getElementById('empty-state').style.display = 'none';
+  const detail = document.getElementById('tip-detail');
+  detail.style.display = 'flex';
+
+  const scoreColor = t.score >= 85 ? '#ef4444' : t.score >= 60 ? '#f59e0b' : '#3b82f6';
+
+  detail.innerHTML = `
+    ${t.crisis ? `<div class="crisis-bar">🚨 VICTIM CRISIS ALERT — Suicidal ideation indicated. Dispatch crisis intervention immediately.</div>` : ''}
+    ${t.deconfliction ? `<div style="background:#1a0a2e;border-bottom:1px solid #4c1d95;padding:10px 24px;font-size:13px;color:#d8b4fe">⚠ DECONFLICTION CONFLICT — ${t.deconfliction.agency}: ${t.deconfliction.contact} ${t.deconfliction.phone}</div>` : ''}
+    <div class="detail-header">
+      <div>
+        <div class="detail-id">${t.tip_id}</div>
+        <div class="detail-meta">${t.offense.replace(/_/g,' ')} · ${t.esp} · ${t.time}</div>
+        <div style="margin-top:8px">
+          ${t.flags.map(f => `<span class="flag ${f.includes('CRISIS')||f.includes('WARRANT')||f.includes('BLOCKED')||f.includes('CONFLICT')||f.includes('DO NOT')?'red':f.includes('MATCH')||f.includes('AIG')?'yellow':'blue'}">${f}</span>`).join(' ')}
+        </div>
+      </div>
+      <div class="detail-score">
+        <div class="detail-score-num" style="color:${scoreColor}">${t.score}</div>
+        <div class="detail-score-label">/ 100</div>
+        <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--border2);padding:2px 8px">${t.tier}</div>
+      </div>
+    </div>
+    <div class="action-bar"><strong>ACTION:</strong> ${t.action}</div>
+
+    <div style="flex:1;overflow-y:auto;padding:20px">
+      <div class="tab-row">
+        <div class="tab active" onclick="switchTab(this,'overview-tab')">Overview</div>
+        <div class="tab" onclick="switchTab(this,'files-tab')">Files (${t.files.length})</div>
+        <div class="tab" onclick="switchTab(this,'entities-tab')">Entities</div>
+        <div class="tab" onclick="switchTab(this,'scoring-tab')">Scoring</div>
+      </div>
+
+      <div id="overview-tab" class="tab-content active">
+        <div class="demo-callout">This is what an investigator sees within seconds of a tip arriving. The AI has already read the tip, classified the offense, checked hash databases, and written the recommended action.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="card-box">
+            <div class="box-label">Offense</div>
+            <div class="box-value">${t.offense.replace(/_/g,' ')}</div>
+            <div class="box-sub">Routing: ${t.routing}</div>
+          </div>
+          <div class="card-box">
+            <div class="box-label">Applicable Statutes</div>
+            <div class="box-value" style="font-family:var(--mono);font-size:12px">${t.statutes.join(', ')}</div>
+          </div>
+        </div>
+        ${t.deconfliction ? `<div class="card-box" style="border-color:#4c1d95">
+          <div class="box-label" style="color:#a855f7">De-Confliction Result</div>
+          <div class="box-value">⚠ Active investigation — ${t.deconfliction.agency}</div>
+          <div class="box-sub">Contact: ${t.deconfliction.contact} · ${t.deconfliction.phone}</div>
+        </div>` : ''}
+        <div class="card-box">
+          <div class="box-label">Normalized Tip Body</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">${t.body}</div>
+        </div>
+        ${t.preservation_deadline ? `<div class="card-box" style="border-color:${t.preservation_deadline <= 30 ? 'var(--red)' : 'var(--border)'}">
+          <div class="box-label" style="${t.preservation_deadline <= 30 ? 'color:var(--red)' : ''}">⏱ ESP Data Retention Window</div>
+          <div class="box-value">${t.esp}: ${t.preservation_deadline} days</div>
+          <div class="box-sub">Draft preservation request has been prepared. Review and issue to lock the data.</div>
+        </div>` : ''}
+      </div>
+
+      <div id="files-tab" class="tab-content">
+        <div class="demo-callout">Files that the ESP did not review before reporting are automatically blocked by the Legal Gate Agent. Investigators cannot access them without a warrant — the system enforces this technically.</div>
+        ${t.files.map(f => `
+          <div class="file-row ${f.status}">
+            <span>${f.media_type === 'video' || f.name.includes('mp4') ? '🎬' : f.name.includes('txt') || f.name.includes('zip') ? '📄' : '🖼'}</span>
+            <span class="file-name">${f.name}</span>
+            ${f.hash ? `<span style="font-size:11px;color:var(--yellow);font-weight:600">${f.source} ✓</span>` : ''}
+            ${f.aig ? `<span style="font-size:11px;color:var(--yellow);font-weight:600">AIG DETECTED</span>` : ''}
+            <span class="file-status ${f.status}">${f.status === 'blocked' ? '🔒 BLOCKED — Warrant Required' : '🔓 Accessible'}</span>
+          </div>`).join('')}
+        <div class="card-box" style="margin-top:14px">
+          <div class="box-label">Legal Status</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">${t.legal}</div>
+        </div>
+      </div>
+
+      <div id="entities-tab" class="tab-content">
+        <div class="demo-callout">Every actionable entity is extracted automatically — accounts, IPs, venues, platforms. Each one is searchable in your case database and cross-referenced with prior tips.</div>
+        <div class="card-box">
+          <div class="box-label">Extracted Identifiers</div>
+          ${t.entities.map(e => `<div style="font-family:var(--mono);font-size:12px;color:#7dd3fc;padding:5px 0;border-bottom:1px solid var(--border)">${e}</div>`).join('')}
+        </div>
+      </div>
+
+      <div id="scoring-tab" class="tab-content">
+        <div class="demo-callout">Every point in the score is explained. Investigators can see exactly why a tip scored high — making it easier to justify prioritization to supervisors and in court.</div>
+        <div class="card-box">
+          <div class="box-label">Scoring Breakdown</div>
+          ${t.factors.map(f => `
+            <div class="factor-row">
+              <span>${f.label}</span>
+              <span class="factor-pts">${f.pts >= 0 ? '+' : ''}${f.pts}</span>
+            </div>`).join('')}
+          <div class="factor-row" style="font-weight:600;border-top:1px solid var(--border2);margin-top:4px;padding-top:8px">
+            <span style="color:#e8f4ff">Total Score</span>
+            <span class="factor-pts" style="font-size:15px">${t.score}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function switchTab(el, id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(id)?.classList.add('active');
+}
+
+// Init
+renderQueue();
+selectTip('TIP-2024-00441');
+</script>
+</body>
+</html>

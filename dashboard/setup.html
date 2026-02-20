@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CyberTip Triage — Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0e18;
+      --surface:  #111828;
+      --border:   #1e2a3a;
+      --border2:  #2a3a50;
+      --text:     #c8d8e8;
+      --muted:    #5a7090;
+      --accent:   #2d8cf0;
+      --accent2:  #1a5fa0;
+      --green:    #22c55e;
+      --yellow:   #f59e0b;
+      --red:      #ef4444;
+      --mono:     'IBM Plex Mono', monospace;
+      --sans:     'IBM Plex Sans', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 400;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scanline texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .top-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .shield { font-size: 18px; }
+    .top-bar h1 {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .top-bar .badge {
+      margin-left: auto;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #fca5a5;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 8px;
+      letter-spacing: 0.1em;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      flex: 1;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 40px 24px;
+      gap: 48px;
+    }
+
+    /* ── Sidebar steps ── */
+    .steps-sidebar { padding-top: 4px; }
+    .steps-sidebar h2 {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 12px 0;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .step-item:not(.active):not(.done) { opacity: 0.4; }
+    .step-num {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .step-item.active .step-num {
+      border-color: var(--accent);
+      background: rgba(45,140,240,0.15);
+      color: var(--accent);
+    }
+    .step-item.done .step-num {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.12);
+      color: var(--green);
+    }
+    .step-label { font-size: 13px; font-weight: 500; color: var(--text); }
+    .step-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .connector {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin-left: 13px;
+    }
+
+    /* ── Main panel ── */
+    .main-panel { }
+
+    .step-panel { display: none; }
+    .step-panel.active { display: block; animation: fadein 0.3s ease; }
+
+    @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    .step-heading {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .step-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #e8f4ff;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+    .step-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 32px;
+      max-width: 540px;
+    }
+
+    /* Form elements */
+    .form-group { margin-bottom: 20px; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    input.valid { border-color: var(--green); }
+    input.invalid { border-color: var(--red); }
+    select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a7090' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+    .input-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .input-error { font-size: 11px; color: var(--red); margin-top: 6px; display: none; }
+
+    /* Inline two-col */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    /* Radio cards */
+    .radio-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    .radio-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border2);
+      padding: 18px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .radio-card:hover { border-color: var(--accent2); }
+    .radio-card.selected { border-color: var(--accent); background: rgba(45,140,240,0.07); }
+    .radio-card input { position: absolute; opacity: 0; }
+    .rc-icon { font-size: 22px; margin-bottom: 8px; }
+    .rc-title { font-size: 14px; font-weight: 600; color: #e8f4ff; margin-bottom: 4px; }
+    .rc-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .rc-rec {
+      display: inline-block;
+      font-size: 10px;
+      background: rgba(34,197,94,0.15);
+      border: 1px solid rgba(34,197,94,0.3);
+      color: var(--green);
+      padding: 2px 7px;
+      margin-bottom: 6px;
+      letter-spacing: 0.05em;
+    }
+
+    /* Info box */
+    .info-box {
+      background: rgba(45,140,240,0.07);
+      border: 1px solid rgba(45,140,240,0.25);
+      padding: 14px 18px;
+      margin-bottom: 24px;
+    }
+    .info-box.warn { background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.25); }
+    .info-box.ok   { background: rgba(34,197,94,0.07);  border-color: rgba(34,197,94,0.25);  }
+    .info-title { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+    .info-box.warn .info-title { color: var(--yellow); }
+    .info-box.ok   .info-title { color: var(--green); }
+    .info-body { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-label { font-size: 13px; font-weight: 500; }
+    .toggle-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--border2);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle input:checked + .toggle-track { background: var(--accent); }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      background: #fff;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+
+    /* Collapsible section */
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .collapsible-content { display: none; padding-bottom: 12px; }
+    .collapsible-content.open { display: block; }
+    .caret { transition: transform 0.2s; color: var(--muted); }
+    .caret.open { transform: rotate(90deg); }
+
+    /* Status items */
+    .status-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .status-dot.ok  { background: var(--green); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .status-dot.warn { background: var(--yellow); }
+    .status-dot.err { background: var(--red); }
+    .status-dot.pending { background: var(--muted); animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .status-val { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+    /* Buttons */
+    .btn-row { display: flex; gap: 12px; margin-top: 32px; }
+    .btn {
+      padding: 11px 28px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #4da3ff; }
+    .btn-secondary { background: transparent; border: 1px solid var(--border2); color: var(--muted); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-success { background: var(--green); color: #000; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Code block */
+    .code-block {
+      background: #060a10;
+      border: 1px solid var(--border);
+      padding: 14px 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #7dd3fc;
+      margin: 12px 0;
+      position: relative;
+      overflow-x: auto;
+    }
+    .code-block .copy-btn {
+      position: absolute;
+      top: 8px; right: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .code-block .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* Credential card */
+    .cred-card {
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .cred-header {
+      background: var(--surface);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .cred-icon { font-size: 16px; }
+    .cred-name { font-size: 13px; font-weight: 600; }
+    .cred-required { font-size: 10px; color: var(--yellow); margin-left: auto; }
+    .cred-optional { font-size: 10px; color: var(--muted); margin-left: auto; }
+    .cred-body { padding: 16px; }
+    .cred-body .form-group:last-child { margin-bottom: 0; }
+
+    /* Summary table */
+    .summary-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .summary-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .summary-table td:first-child { color: var(--muted); font-size: 12px; width: 40%; }
+    .summary-table td:last-child { font-family: var(--mono); font-size: 12px; }
+
+    /* Progress bar */
+    .progress-bar { height: 2px; background: var(--border); margin-bottom: 40px; }
+    .progress-fill { height: 100%; background: var(--accent); transition: width 0.4s ease; }
+
+    .success-icon { font-size: 48px; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <span class="shield">🛡</span>
+  <h1>CyberTip Triage — Initial Setup</h1>
+  <span class="badge">LAW ENFORCEMENT ONLY</span>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="steps-sidebar">
+    <h2>Setup Steps</h2>
+
+    <div class="step-item done" id="nav-0" onclick="goTo(0)">
+      <div class="step-num">✓</div>
+      <div>
+        <div class="step-label">Welcome</div>
+        <div class="step-sub">What this system does</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-1" onclick="goTo(1)">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-label">Your Agency</div>
+        <div class="step-sub">Name, state, contact</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-2" onclick="goTo(2)">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-label">Deployment</div>
+        <div class="step-sub">Docker or Node.js</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-3" onclick="goTo(3)">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-label">Anthropic API Key</div>
+        <div class="step-sub">Powers the AI triage</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-4" onclick="goTo(4)">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-label">Tip Sources</div>
+        <div class="step-sub">IDS, NCMEC API, email</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-5" onclick="goTo(5)">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-label">External APIs</div>
+        <div class="step-sub">Hash lookup, de-confliction</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-6" onclick="goTo(6)">
+      <div class="step-num">6</div>
+      <div>
+        <div class="step-label">Confirm & Save</div>
+        <div class="step-sub">Review and apply settings</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main panel -->
+  <main class="main-panel">
+    <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+
+    <!-- Step 0: Welcome -->
+    <div class="step-panel active" id="step-0">
+      <div class="step-heading">Welcome</div>
+      <h2 class="step-title">CyberTip Triage<br/>ICAC Task Force Setup</h2>
+      <p class="step-desc">This wizard configures CyberTip Triage for your task force. It takes about 5 minutes. Every setting can be changed later from this page.</p>
+
+      <div class="info-box warn" style="margin-bottom:20px">
+        <div class="info-title">⚠ AUTHORIZED USE ONLY</div>
+        <div class="info-body">This system processes CSAM reports from NCMEC. Access is restricted to authorized ICAC investigators and task force personnel. All activity is logged.</div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:28px">
+        <div style="background:var(--surface);border:1px solid var(--border);padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">⚖️</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#e8f4ff">Wilson Ruling Built In</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Files the ESP didn't view are automatically locked. You can't accidentally access them without a warrant.</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">📊</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#e8f4ff">Scores Every Tip 0–100</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Investigators see IMMEDIATE cases first. Minor victim + active meeting = top of queue.</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">🔗</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#e8f4ff">De-Confliction</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Checks RISSafe/HighWay before assigning. Tips pause automatically if another agency has an active case.</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">⏱️</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#e8f4ff">Preservation Deadlines</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Counts down ESP data retention windows. You'll never lose evidence because you sent the 2703(f) late.</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(1)">Begin Setup →</button>
+        <button class="btn btn-secondary" onclick="window.location='/demo'">Try Demo Mode First</button>
+      </div>
+    </div>
+
+    <!-- Step 1: Agency -->
+    <div class="step-panel" id="step-1">
+      <div class="step-heading">Step 1 of 6</div>
+      <h2 class="step-title">Your Task Force</h2>
+      <p class="step-desc">Basic information about your agency. This appears in reports, alert emails, and preservation request letters.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Agency / Task Force Name</label>
+          <input type="text" id="agencyName" placeholder="e.g. Southern California ICAC" value="ICAC Task Force"/>
+        </div>
+        <div class="form-group">
+          <label>State</label>
+          <select id="agencyState">
+            <option value="">Select state...</option>
+            <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option>
+            <option>CO</option><option>CT</option><option>DE</option><option>FL</option><option>GA</option>
+            <option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option>
+            <option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option>
+            <option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option>
+            <option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option>
+            <option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option>
+            <option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option>
+            <option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option>
+            <option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>IT / System Administrator Email</label>
+        <input type="email" id="contactEmail" placeholder="itadmin@agency.gov"/>
+        <div class="input-hint">Receives system alerts, error notifications, and certificate renewal reminders.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="port" value="3000" min="1024" max="65535" style="width:160px"/>
+        <div class="input-hint">The port the dashboard runs on. Default 3000 is fine for most setups.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(2)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goTo(0)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Deployment -->
+    <div class="step-panel" id="step-2">
+      <div class="step-heading">Step 2 of 6</div>
+      <h2 class="step-title">Deployment Mode</h2>
+      <p class="step-desc">How do you want to run CyberTip Triage? Docker is recommended — it installs everything automatically including the database.</p>
+
+      <div class="radio-cards">
+        <label class="radio-card selected" id="card-docker" onclick="selectMode('docker')">
+          <input type="radio" name="mode" value="docker" checked/>
+          <div class="rc-icon">🐳</div>
+          <div class="rc-rec">RECOMMENDED</div>
+          <div class="rc-title">Docker</div>
+          <div class="rc-desc">One command to start everything. No database setup needed. Works on Windows, Mac, and Linux.</div>
+        </label>
+        <label class="radio-card" id="card-node" onclick="selectMode('node')">
+          <input type="radio" name="mode" value="node"/>
+          <div class="rc-icon">⬡</div>
+          <div class="rc-title">Node.js Direct</div>
+          <div class="rc-desc">Run directly on your server. Requires PostgreSQL 15+ already installed and configured.</div>
+        </label>
+      </div>
+
+      <div id="docker-info" class="info-box ok">
+        <div class="info-title">✓ Docker selected</div>
+        <div class="info-body">
+          Docker Desktop must be installed on this machine. If you don't have it:<br/><br/>
+          • <strong>Windows/Mac:</strong> <a href="https://docker.com/products/docker-desktop" style="color:var(--accent)">docker.com/products/docker-desktop</a><br/>
+          • <strong>Linux:</strong> <a href="https://docs.docker.com/engine/install" style="color:var(--accent)">docs.docker.com/engine/install</a><br/><br/>
+          After installing Docker, run <code style="color:#7dd3fc;background:#0a0e18;padding:1px 5px">./start.sh</code> to launch CyberTip Triage.
+        </div>
+      </div>
+
+      <div id="node-info" class="info-box" style="display:none">
+        <div class="info-title">Node.js mode</div>
+        <div class="info-body">
+          You'll need PostgreSQL 15+ running before starting. The system will also need Redis if you want the full job queue.<br/><br/>
+          • <a href="https://postgresql.org/download" style="color:var(--accent)">postgresql.org/download</a><br/>
+          • After database setup, run: <code style="color:#7dd3fc;background:#0a0e18;padding:1px 5px">npm run db:migrate</code> then <code style="color:#7dd3fc;background:#0a0e18;padding:1px 5px">npm start</code>
+        </div>
+      </div>
+
+      <div id="node-db" style="display:none">
+        <div class="form-group" style="margin-top:20px">
+          <label>Database URL</label>
+          <input type="text" id="dbUrl" placeholder="postgresql://user:password@localhost:5432/cybertip" style="font-family:var(--mono);font-size:12px"/>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(3)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goTo(1)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 3: API Key -->
+    <div class="step-panel" id="step-3">
+      <div class="step-heading">Step 3 of 6</div>
+      <h2 class="step-title">Anthropic API Key</h2>
+      <p class="step-desc">CyberTip Triage uses Anthropic's Claude AI models to read, classify, and score each tip. You need an API key from Anthropic's console.</p>
+
+      <div class="info-box" style="margin-bottom:24px">
+        <div class="info-title">How to get an API key</div>
+        <div class="info-body">
+          1. Go to <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a><br/>
+          2. Sign in or create an account<br/>
+          3. Click <strong>API Keys</strong> → <strong>Create Key</strong><br/>
+          4. Copy the key (it starts with <code style="color:#7dd3fc;background:#0a0e18;padding:1px 5px">sk-ant-</code>)<br/><br/>
+          <strong>Estimated cost:</strong> ~$2–5 per 1,000 tips. Most task forces process 50–500 tips/month.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Anthropic API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off"/>
+        <div class="input-hint" id="key-hint">Paste your key here. It will be stored only in your .env file.</div>
+        <div class="input-error" id="key-error">Key format is invalid. It should start with sk-ant- and be at least 40 characters.</div>
+      </div>
+
+      <div id="key-valid-box" class="info-box ok" style="display:none">
+        <div class="info-title">✓ Key format valid</div>
+        <div class="info-body">The key will be verified on first use. Keep this key confidential.</div>
+      </div>
+
+      <div class="info-box warn">
+        <div class="info-title">No key yet?</div>
+        <div class="info-body">You can skip this and add it later — enter a placeholder and edit the <code style="background:#0a0e18;padding:1px 5px">.env</code> file when you have your key. The system will not process tips until a valid key is entered.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(4)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goTo(2)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Tip Sources -->
+    <div class="step-panel" id="step-4">
+      <div class="step-heading">Step 4 of 6</div>
+      <h2 class="step-title">Tip Sources</h2>
+      <p class="step-desc">Configure where tips come from. You can start with just one source and add more later. Stub mode lets you test without real credentials.</p>
+
+      <!-- IDS Portal -->
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">📋</span>
+          <span class="cred-name">ICAC Data System (IDS) Portal</span>
+          <div class="cred-optional" style="margin-left:auto">
+            <label class="toggle" style="display:inline-flex">
+              <input type="checkbox" id="ids-enabled" onchange="toggleSection('ids-fields',this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:12px">The primary way most ICAC task forces receive NCMEC referrals. Requires registration at <a href="https://www.icacdatasystem.com" style="color:var(--accent)">icacdatasystem.com</a>.</div>
+          <div id="ids-fields" style="display:none">
+            <div class="form-group">
+              <label>IDS Login Email</label>
+              <input type="email" id="idsEmail" placeholder="investigator@agency.gov"/>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>IDS Password</label>
+              <input type="password" id="idsPassword" autocomplete="off"/>
+            </div>
+          </div>
+          <div class="info-box" style="margin-top:12px;margin-bottom:0;padding:10px 14px">
+            <div class="info-body" style="font-size:12px">💡 <strong>Test without real credentials:</strong> Put text files in <code style="background:#0a0e18;padding:1px 4px">test-data/ids-stubs/</code> — the system will process them as if they came from IDS.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NCMEC API -->
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">🏛️</span>
+          <span class="cred-name">NCMEC API (Direct XML Feed)</span>
+          <div style="margin-left:auto">
+            <label class="toggle" style="display:inline-flex">
+              <input type="checkbox" id="ncmec-enabled" onchange="toggleSection('ncmec-fields',this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:12px">A direct API feed from NCMEC, separate from IDS. Contact NCMEC to apply: <a href="https://missingkids.org/gethelpnow/cyberTipline" style="color:var(--accent)">missingkids.org</a>. Takes 1–2 weeks to obtain.</div>
+          <div id="ncmec-fields" style="display:none">
+            <div class="form-group" style="margin-bottom:0">
+              <label>NCMEC API Key</label>
+              <input type="password" id="ncmecKey" autocomplete="off"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email -->
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">📧</span>
+          <span class="cred-name">Email Tip Inbox</span>
+          <div style="margin-left:auto">
+            <label class="toggle" style="display:inline-flex">
+              <input type="checkbox" id="email-enabled" onchange="toggleSection('email-fields',this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:12px">For tips submitted via email to a dedicated inbox (e.g. tips@icac.agency.gov).</div>
+          <div id="email-fields" style="display:none">
+            <div class="form-row">
+              <div class="form-group">
+                <label>IMAP Server</label>
+                <input type="text" id="emailHost" placeholder="imap.agency.gov"/>
+              </div>
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="emailUser" placeholder="tips@icac.agency.gov"/>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>Email Password</label>
+              <input type="password" id="emailPass" autocomplete="off"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(5)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goTo(3)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 5: External APIs -->
+    <div class="step-panel" id="step-5">
+      <div class="step-heading">Step 5 of 6</div>
+      <h2 class="step-title">External APIs</h2>
+      <p class="step-desc">These integrations enhance triage quality. All are optional — the system works without them but produces fewer hash matches and de-confliction alerts.</p>
+
+      <div class="info-box warn" style="margin-bottom:24px">
+        <div class="info-title">These credentials require law enforcement vetting</div>
+        <div class="info-body">All external APIs below require separate law enforcement registration. Links are provided to apply. Add credentials here as you receive them — you don't need them for initial setup.</div>
+      </div>
+
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">🔍</span>
+          <span class="cred-name">Project VIC Hash Matching</span>
+          <span class="cred-optional">Apply at projectvic.org</span>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:10px">Matches hashes against Project VIC's known CSAM database. Highest value integration after NCMEC.</div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Project VIC API Key</label>
+            <input type="password" id="vicKey" placeholder="Leave blank if not yet obtained" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">🌐</span>
+          <span class="cred-name">IWF Hash List</span>
+          <span class="cred-optional">Apply via IWF LE liaison</span>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:10px">Internet Watch Foundation hash matching — critical for UK-origin and international CSAM.</div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>IWF API Key</label>
+            <input type="password" id="iwfKey" placeholder="Leave blank if not yet obtained" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="cred-card">
+        <div class="cred-header">
+          <span class="cred-icon">⚡</span>
+          <span class="cred-name">De-Confliction (RISSafe / HighWay)</span>
+          <span class="cred-optional">Contact your regional RISS center</span>
+        </div>
+        <div class="cred-body">
+          <div class="input-hint" style="margin-bottom:10px">Prevents investigators from contacting a subject another agency is actively surveilling.</div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>De-Confliction API Key</label>
+            <input type="password" id="deconKey" placeholder="Leave blank if not yet obtained" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(6)">Review & Save →</button>
+        <button class="btn btn-secondary" onclick="goTo(4)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 6: Confirm -->
+    <div class="step-panel" id="step-6">
+      <div class="step-heading">Step 6 of 6</div>
+      <h2 class="step-title">Review & Save</h2>
+      <p class="step-desc">Review your settings before saving. The configuration will be written to your <code style="background:var(--surface);padding:2px 6px">.env</code> file.</p>
+
+      <table class="summary-table" id="summary-table">
+        <tr><td>Agency</td><td id="sum-agency">—</td></tr>
+        <tr><td>State</td><td id="sum-state">—</td></tr>
+        <tr><td>Deployment</td><td id="sum-mode">—</td></tr>
+        <tr><td>Port</td><td id="sum-port">—</td></tr>
+        <tr><td>Anthropic API Key</td><td id="sum-key">—</td></tr>
+        <tr><td>IDS Portal</td><td id="sum-ids">—</td></tr>
+        <tr><td>NCMEC API</td><td id="sum-ncmec">—</td></tr>
+        <tr><td>Email Ingestion</td><td id="sum-email">—</td></tr>
+        <tr><td>Project VIC</td><td id="sum-vic">—</td></tr>
+        <tr><td>IWF</td><td id="sum-iwf">—</td></tr>
+        <tr><td>De-Confliction</td><td id="sum-decon">—</td></tr>
+      </table>
+
+      <div class="status-list" id="validation-list">
+        <div class="status-item">
+          <div class="status-dot pending" id="dot-key"></div>
+          <div class="status-name">Anthropic API key</div>
+          <div class="status-val" id="val-key">Checking...</div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot pending" id="dot-agency"></div>
+          <div class="status-name">Agency info complete</div>
+          <div class="status-val" id="val-agency">Checking...</div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot warn" id="dot-ids"></div>
+          <div class="status-name">IDS Portal</div>
+          <div class="status-val" id="val-ids">Optional</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="save-btn" onclick="saveConfig()">Save Configuration</button>
+        <button class="btn btn-secondary" onclick="goTo(5)">← Back</button>
+      </div>
+
+      <!-- Success state -->
+      <div id="save-success" style="display:none;margin-top:32px">
+        <div class="info-box ok">
+          <div class="info-title">✓ Configuration saved</div>
+          <div class="info-body">
+            Your <code style="background:#0a0e18;padding:1px 5px">.env</code> file has been written. A test tip has been placed in <code style="background:#0a0e18;padding:1px 5px">test-data/ids-stubs/</code>.<br/><br/>
+            <strong id="start-instruction"></strong>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-success" onclick="window.location='/dashboard'">Open Dashboard →</button>
+          <button class="btn btn-secondary" onclick="window.location='/health'">Check System Status</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentStep = 0;
+const TOTAL_STEPS = 6;
+
+function goTo(step) {
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('step-' + step).classList.add('active');
+
+  document.querySelectorAll('.step-item').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < step) el.classList.add('done');
+    else if (i === step) el.classList.add('active');
+    // Update step numbers for done items
+    el.querySelector('.step-num').textContent = i < step ? '✓' : (i === 0 ? '✓' : i);
+  });
+
+  document.getElementById('progress').style.width = (step / TOTAL_STEPS * 100) + '%';
+  currentStep = step;
+
+  if (step === 6) populateSummary();
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function selectMode(mode) {
+  document.getElementById('card-docker').classList.toggle('selected', mode === 'docker');
+  document.getElementById('card-node').classList.toggle('selected', mode === 'node');
+  document.getElementById('docker-info').style.display = mode === 'docker' ? 'block' : 'none';
+  document.getElementById('node-info').style.display = mode === 'node' ? 'block' : 'none';
+  document.getElementById('node-db').style.display = mode === 'node' ? 'block' : 'none';
+}
+
+function toggleSection(id, show) {
+  document.getElementById(id).style.display = show ? 'block' : 'none';
+}
+
+// ── API key validation ────────────────────────────────────────────────────────
+document.getElementById('apiKey').addEventListener('input', function() {
+  const val = this.value.trim();
+  const valid = val.startsWith('sk-ant-') && val.length > 30;
+  this.classList.toggle('valid', valid && val.length > 0);
+  this.classList.toggle('invalid', !valid && val.length > 0);
+  document.getElementById('key-error').style.display = (!valid && val.length > 0) ? 'block' : 'none';
+  document.getElementById('key-valid-box').style.display = valid ? 'block' : 'none';
+  document.getElementById('key-hint').style.display = valid ? 'none' : 'block';
+});
+
+// ── Summary population ────────────────────────────────────────────────────────
+function populateSummary() {
+  const mode = document.querySelector('input[name="mode"]:checked')?.value ?? 'docker';
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const idsEnabled = document.getElementById('ids-enabled').checked;
+  const ncmecEnabled = document.getElementById('ncmec-enabled').checked;
+  const emailEnabled = document.getElementById('email-enabled').checked;
+
+  document.getElementById('sum-agency').textContent = document.getElementById('agencyName').value || '—';
+  document.getElementById('sum-state').textContent = document.getElementById('agencyState').value || '—';
+  document.getElementById('sum-mode').textContent = mode === 'docker' ? 'Docker (recommended)' : 'Node.js';
+  document.getElementById('sum-port').textContent = document.getElementById('port').value;
+  document.getElementById('sum-key').textContent = apiKey ? '••••••' + apiKey.slice(-6) : 'Not set';
+  document.getElementById('sum-ids').textContent = idsEnabled ? `✓ ${document.getElementById('idsEmail').value || 'configured'}` : 'Not configured';
+  document.getElementById('sum-ncmec').textContent = ncmecEnabled ? '✓ Configured' : 'Not configured';
+  document.getElementById('sum-email').textContent = emailEnabled ? `✓ ${document.getElementById('emailUser').value || 'configured'}` : 'Not configured';
+  document.getElementById('sum-vic').textContent = document.getElementById('vicKey').value ? '✓ Configured' : 'Not configured';
+  document.getElementById('sum-iwf').textContent = document.getElementById('iwfKey').value ? '✓ Configured' : 'Not configured';
+  document.getElementById('sum-decon').textContent = document.getElementById('deconKey').value ? '✓ Configured' : 'Not configured';
+
+  // Validation
+  const keyValid = apiKey.startsWith('sk-ant-') && apiKey.length > 30;
+  const agencyValid = document.getElementById('agencyName').value.trim().length > 0 &&
+                      document.getElementById('agencyState').value.length > 0;
+
+  setStatus('key', keyValid ? 'ok' : 'err', keyValid ? 'Valid' : 'Missing or invalid');
+  setStatus('agency', agencyValid ? 'ok' : 'warn', agencyValid ? 'Complete' : 'Incomplete');
+  setStatus('ids', idsEnabled ? 'ok' : 'warn', idsEnabled ? 'Configured' : 'Optional — can add later');
+}
+
+function setStatus(id, type, label) {
+  document.getElementById('dot-' + id).className = 'status-dot ' + type;
+  document.getElementById('val-' + id).textContent = label;
+}
+
+// ── Save config ───────────────────────────────────────────────────────────────
+async function saveConfig() {
+  const config = {
+    agencyName: document.getElementById('agencyName').value,
+    agencyState: document.getElementById('agencyState').value,
+    contactEmail: document.getElementById('contactEmail').value,
+    port: document.getElementById('port').value,
+    mode: document.querySelector('input[name="mode"]:checked')?.value ?? 'docker',
+    dbUrl: document.getElementById('dbUrl')?.value ?? '',
+    apiKey: document.getElementById('apiKey').value,
+    idsEnabled: document.getElementById('ids-enabled').checked,
+    idsEmail: document.getElementById('idsEmail').value,
+    idsPassword: document.getElementById('idsPassword').value,
+    ncmecEnabled: document.getElementById('ncmec-enabled').checked,
+    ncmecKey: document.getElementById('ncmecKey').value,
+    emailEnabled: document.getElementById('email-enabled').checked,
+    emailHost: document.getElementById('emailHost').value,
+    emailUser: document.getElementById('emailUser').value,
+    emailPass: document.getElementById('emailPass').value,
+    vicKey: document.getElementById('vicKey').value,
+    iwfKey: document.getElementById('iwfKey').value,
+    deconKey: document.getElementById('deconKey').value,
+  };
+
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    const resp = await fetch('/api/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+
+    if (resp.ok) {
+      document.getElementById('save-success').style.display = 'block';
+      document.getElementById('start-instruction').textContent =
+        config.mode === 'docker'
+          ? 'Run ./start.sh to launch. The dashboard will open automatically.'
+          : 'Run npm start to launch, then open http://localhost:' + config.port + '/dashboard';
+      btn.style.display = 'none';
+    } else {
+      const err = await resp.json();
+      alert('Save failed: ' + (err.error ?? 'Unknown error'));
+      btn.disabled = false;
+      btn.textContent = 'Save Configuration';
+    }
+  } catch {
+    // API not available — show the .env content the user can copy
+    showManualSave(config);
+    btn.disabled = false;
+    btn.textContent = 'Save Configuration';
+  }
+}
+
+function showManualSave(config) {
+  const envContent = generateEnv(config);
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="info-box warn" style="margin-top:20px">
+      <div class="info-title">Manual save required</div>
+      <div class="info-body">The server couldn't save automatically. Copy the content below and save it as a file named <strong>.env</strong> in your cybertip-triage folder.</div>
+    </div>
+    <div class="code-block" style="margin-top:12px;font-size:11px;white-space:pre;overflow-x:auto;max-height:300px">
+      <button class="copy-btn" onclick="copyEnv(this)">Copy</button>
+      ${envContent.replace(/</g,'&lt;')}
+    </div>`;
+  document.getElementById('save-success').before(div);
+  document.getElementById('save-success').style.display = 'block';
+}
+
+function copyEnv(btn) {
+  const text = btn.closest('.code-block').textContent.replace('Copy','').trim();
+  navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Copied!'; });
+}
+
+function generateEnv(c) {
+  return `# CyberTip Triage — Configuration
+# Agency: ${c.agencyName} (${c.agencyState})
+# Generated: ${new Date().toISOString()}
+
+AGENCY_NAME="${c.agencyName}"
+AGENCY_STATE="${c.agencyState}"
+CONTACT_EMAIL="${c.contactEmail}"
+
+PORT=${c.port}
+NODE_ENV=production
+
+ANTHROPIC_API_KEY=${c.apiKey || 'REPLACE_WITH_KEY'}
+
+DB_MODE=postgres
+DATABASE_URL=${c.dbUrl || 'postgresql://cybertip:CHANGEME@localhost:5432/cybertip'}
+
+QUEUE_MODE=${c.mode === 'docker' ? 'bullmq' : 'memory'}
+REDIS_HOST=${c.mode === 'docker' ? 'redis' : 'localhost'}
+REDIS_PORT=6379
+
+IDS_ENABLED=${c.idsEnabled}
+IDS_STUB_DIR=./test-data/ids-stubs
+${c.idsEnabled ? `IDS_EMAIL=${c.idsEmail}\nIDS_PASSWORD=${c.idsPassword}` : `# IDS_EMAIL=\n# IDS_PASSWORD=`}
+
+NCMEC_API_ENABLED=${c.ncmecEnabled}
+${c.ncmecEnabled ? `NCMEC_API_KEY=${c.ncmecKey}` : `# NCMEC_API_KEY=`}
+
+EMAIL_ENABLED=${c.emailEnabled}
+${c.emailEnabled ? `EMAIL_IMAP_HOST=${c.emailHost}\nEMAIL_USER=${c.emailUser}\nEMAIL_PASSWORD=${c.emailPass}` : `# EMAIL_IMAP_HOST=\n# EMAIL_USER=\n# EMAIL_PASSWORD=`}
+
+VPN_PORTAL_ENABLED=true
+VPN_PORTAL_SECRET=${Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)}
+
+${c.vicKey ? `PROJECT_VIC_API_KEY=${c.vicKey}` : `# PROJECT_VIC_API_KEY=`}
+${c.iwfKey ? `IWF_API_KEY=${c.iwfKey}` : `# IWF_API_KEY=`}
+${c.deconKey ? `RISSAFE_API_KEY=${c.deconKey}` : `# RISSAFE_API_KEY=`}
+`;
+}
+
+// Initialize
+goTo(0);
+</script>
+</body>
+</html>
