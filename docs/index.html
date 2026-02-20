@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyberTip Triage System</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" />
+  <style>
+    body {
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: 'SF Pro Display', system-ui, sans-serif;
+    }
+
+    .crisis-banner {
+      animation: pulse-red 1.5s infinite;
+    }
+
+    @keyframes pulse-red {
+
+      0%,
+      100% {
+        background: #7f1d1d;
+      }
+
+      50% {
+        background: #991b1b;
+      }
+    }
+
+    .tier-IMMEDIATE {
+      border-left: 4px solid #ef4444;
+    }
+
+    .tier-URGENT {
+      border-left: 4px solid #f97316;
+    }
+
+    .tier-PAUSED {
+      border-left: 4px solid #a855f7;
+    }
+
+    .tier-STANDARD {
+      border-left: 4px solid #3b82f6;
+    }
+
+    .tier-MONITOR {
+      border-left: 4px solid #6b7280;
+    }
+
+    .badge-IMMEDIATE {
+      background: #7f1d1d;
+      color: #fca5a5;
+    }
+
+    .badge-URGENT {
+      background: #7c2d12;
+      color: #fdba74;
+    }
+
+    .badge-PAUSED {
+      background: #4c1d95;
+      color: #d8b4fe;
+    }
+
+    .badge-STANDARD {
+      background: #1e3a5f;
+      color: #93c5fd;
+    }
+
+    .badge-MONITOR {
+      background: #1f2937;
+      color: #9ca3af;
+    }
+
+    .file-blocked {
+      background: #1c0a0a;
+      border: 1px solid #7f1d1d;
+    }
+
+    .file-open {
+      background: #0a1c0a;
+      border: 1px solid #14532d;
+    }
+
+    .file-pending {
+      background: #1a1a0a;
+      border: 1px solid #713f12;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+
+    .tab-active {
+      border-bottom: 2px solid #3b82f6;
+      color: #60a5fa;
+    }
+
+    .score-bar {
+      transition: width 0.5s ease;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    const API = 'http://localhost:3000/api';
+
+    // ── Utilities ─────────────────────────────────────────────────────────────────
+    const ago = (iso) => {
+      const diff = Date.now() - new Date(iso).getTime();
+      const m = Math.floor(diff / 60000);
+      if (m < 1) return 'just now';
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    };
+
+    const daysUntil = (iso) => {
+      if (!iso) return null;
+      const d = Math.ceil((new Date(iso) - Date.now()) / 86400000);
+      return d;
+    };
+
+    const scoreColor = (score) => {
+      if (score >= 85) return '#ef4444';
+      if (score >= 60) return '#f97316';
+      if (score >= 30) return '#3b82f6';
+      return '#6b7280';
+    };
+
+    // True if tip has any non-US subjects (needs MLAT)
+    // Also checks classification.mlat_likely_required for tips where international
+    // location only appears in IP WHOIS or extracted entity data
+    const tipHasInternational = (tip) => {
+      const countries = tip.jurisdiction_of_tip?.countries_involved ?? [];
+      const hasNonUs = countries.some(c => c !== 'US');
+      const hasSubjectCountry = tip.extracted?.subject_country && tip.extracted.subject_country !== 'US';
+      const classifierFlagged = tip.classification?.mlat_likely_required === true;
+      return hasNonUs || hasSubjectCountry || classifierFlagged;
+    };
+
+    // ── Components ────────────────────────────────────────────────────────────────
+
+    function CrisisBanner({ tips }) {
+      const crisis = tips.filter(t => t.priority?.victim_crisis_alert);
+      if (!crisis.length) return null;
+      return (
+        <div className="crisis-banner px-4 py-3 flex items-center gap-3">
+          <span className="text-xl">🚨</span>
+          <div>
+            <span className="font-bold text-red-200">VICTIM CRISIS ALERT — {crisis.length} tip{crisis.length > 1 ? 's' : ''}</span>
+            {crisis.map(t => (
+              <span key={t.tip_id} className="ml-3 text-red-300 text-sm">
+                {t.priority?.victim_crisis_alert_text?.slice(0, 80)}...
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function ScoreBar({ score }) {
+      return (
+        <div className="w-full bg-gray-800 rounded-full h-1.5 mt-1">
+          <div
+            className="score-bar h-1.5 rounded-full"
+            style={{ width: `${score}%`, background: scoreColor(score) }}
+          />
+        </div>
+      );
+    }
+
+    function TierBadge({ tier }) {
+      return (
+        <span className={`badge-${tier} tier-badge tier-indicator text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wide`}>
+          {tier}
+        </span>
+      );
+    }
+
+    function PreservationCountdown({ deadline }) {
+      const days = daysUntil(deadline);
+      if (days === null) return null;
+      const urgent = days <= 14;
+      return (
+        <span className={`text-xs px-1.5 py-0.5 rounded ${urgent ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
+          {urgent && '⚠ '}ESP data expires in {days}d
+        </span>
+      );
+    }
+
+    function TipRow({ tip, onClick, selected }) {
+      const tier = tip.priority?.tier ?? 'pending';
+      const score = tip.priority?.score ?? 0;
+      const deadline = tip.classification?.esp_data_retention_deadline;
+      const decon = tip.links?.deconfliction_matches?.some(m => m.active_investigation);
+
+      return (
+        <div
+          className={`tip-row tier-${tier} cursor-pointer p-3 mb-2 rounded-r bg-gray-800 hover:bg-gray-750 transition-colors ${selected ? 'ring-1 ring-blue-500' : ''}`}
+          onClick={() => onClick(tip)}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <TierBadge tier={tier} />
+              {tip.priority?.victim_crisis_alert && <span title="Crisis alert">🚨</span>}
+              {decon && <span title="Deconfliction conflict" className="text-purple-400">⚠</span>}
+              {tip.classification?.aig_csam_flag && <span title="AIG-CSAM detected" className="text-yellow-500 text-xs font-bold">AIG</span>}
+              {(tip.links?.cluster_flags?.length ?? 0) > 0 && (
+                <span title={`Cluster: ${tip.links.cluster_flags[0]?.cluster_type?.replace(/_/g, ' ')}`} className="cluster-alert text-orange-400 text-xs font-bold">CLU</span>
+              )}
+              {tipHasInternational(tip) && (
+                <span title="International — MLAT may be required" className="text-cyan-500 text-xs">🌐</span>
+              )}
+              <span className="text-sm font-mono text-gray-300 truncate">
+                {tip.ncmec_tip_number ?? tip.tip_id.slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {deadline && <PreservationCountdown deadline={deadline} />}
+              {score > 0 && (
+                <span className="text-xs font-bold" style={{ color: scoreColor(score) }}>{score}</span>
+              )}
+              <span className="text-xs text-gray-500">{ago(tip.received_at)}</span>
+            </div>
+          </div>
+          <div className="text-xs text-gray-400 mt-1 flex gap-3">
+            <span>{tip.classification?.offense_category?.replace(/_/g, ' ') ?? 'Unclassified'}</span>
+            <span>{tip.reporter?.esp_name ?? tip.reporter?.type ?? 'Unknown reporter'}</span>
+            <span>{tip.files?.length ?? 0} file{tip.files?.length !== 1 ? 's' : ''}</span>
+          </div>
+          {score > 0 && <ScoreBar score={score} />}
+        </div>
+      );
+    }
+
+    function FileRow({ file, onWarrantUpdate }) {
+      const blocked = file.file_access_blocked;
+      const statusClass = blocked
+        ? (file.warrant_status === 'applied' ? 'file-pending' : 'file-blocked')
+        : 'file-open';
+
+      return (
+        <div className={`${statusClass} rounded p-2 mb-1 text-xs`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>{file.media_type === 'video' ? '🎬' : file.media_type === 'image' ? '🖼' : '📄'}</span>
+              <span className="font-mono text-gray-300">{file.filename ?? file.file_id.slice(0, 12)}</span>
+              {file.ncmec_hash_match && <span className="text-red-400 font-bold">NCMEC ✓</span>}
+              {file.iwf_match && <span className="text-orange-400 font-bold">IWF ✓</span>}
+              {file.aig_csam_suspected && <span className="text-yellow-500 font-bold">AIG</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              {!blocked && (
+                <button
+                  onClick={() => alert(`Opening ${file.filename || file.file_id}... (In production this would open an encrypted viewer)`)}
+                  className="bg-green-800 hover:bg-green-700 text-green-100 px-2 py-0.5 rounded text-xs mr-2"
+                >
+                  👁 View
+                </button>
+              )}
+              {blocked ? (
+                <span className="text-red-400">🔒 BLOCKED</span>
+              ) : (
+                <span className="text-green-400">🔓 Accessible</span>
+              )}
+              <span className="text-gray-500">
+                {file.esp_viewed ? 'ESP viewed' : file.esp_viewed_missing ? 'Flag missing' : 'Not viewed'}
+              </span>
+            </div>
+          </div>
+          {blocked && file.warrant_required && (
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-gray-500">Warrant:</span>
+              <span className={`${file.warrant_status === 'granted' ? 'text-green-400' :
+                file.warrant_status === 'denied' ? 'text-red-400' :
+                  file.warrant_status === 'applied' ? 'text-yellow-400' : 'text-gray-400'
+                }`}>{file.warrant_status}</span>
+              {file.warrant_status === 'pending_application' && (
+                <button
+                  onClick={() => onWarrantUpdate(file.file_id, 'applied')}
+                  className="warrant-btn bg-blue-800 hover:bg-blue-700 text-blue-200 px-2 py-0.5 rounded text-xs"
+                >
+                  Mark Applied
+                </button>
+              )}
+              {file.warrant_status === 'applied' && (
+                <>
+                  <button
+                    onClick={() => onWarrantUpdate(file.file_id, 'granted')}
+                    className="bg-green-900 hover:bg-green-800 text-green-300 px-2 py-0.5 rounded text-xs"
+                  >
+                    Mark Granted
+                  </button>
+                  <button
+                    onClick={() => onWarrantUpdate(file.file_id, 'denied')}
+                    className="bg-red-900 hover:bg-red-800 text-red-300 px-2 py-0.5 rounded text-xs"
+                  >
+                    Denied
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ScoringBreakdown({ factors }) {
+      if (!factors?.length) return null;
+      const applied = factors.filter(f => f.applied);
+      return (
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Scoring factors</div>
+          {applied.map((f, i) => (
+            <div key={i} className="flex items-center justify-between text-xs py-0.5">
+              <span className="text-gray-300">{f.factor}</span>
+              <span className={f.contribution >= 0 ? 'text-green-400' : 'text-red-400'}>
+                {f.contribution >= 0 ? '+' : ''}{f.contribution}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function AuditTrail({ entries }) {
+      if (!entries?.length) return <div className="text-gray-600 text-xs">No audit entries yet</div>;
+      return (
+        <div className="space-y-1">
+          {entries.map(e => (
+            <div key={e.entry_id} className="text-xs border-l-2 border-gray-700 pl-2">
+              <div className="flex items-center gap-2">
+                <span className={e.status === 'success' ? 'text-green-400' : e.status === 'agent_error' ? 'text-red-400' : 'text-yellow-400'}>
+                  {e.status === 'success' ? '✓' : e.status === 'agent_error' ? '✗' : '⚑'}
+                </span>
+                <span className="text-blue-400 font-medium">{e.agent}</span>
+                {e.duration_ms && <span className="text-gray-600">{e.duration_ms}ms</span>}
+                <span className="text-gray-600">{ago(e.timestamp)}</span>
+              </div>
+              <div className="text-gray-400 mt-0.5">{e.summary}</div>
+              {e.error_detail && <div className="text-red-400">{e.error_detail}</div>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function PreservationManager({ requests, tipId, onIssue }) {
+      if (!requests?.length) return <div className="text-gray-600 text-xs">No preservation requests</div>;
+      return (
+        <div className="space-y-2">
+          {requests.map(r => {
+            const days = daysUntil(r.deadline_for_esp_response);
+            return (
+              <div key={r.request_id} className={`rounded p-2 text-xs ${r.status === 'issued' ? 'bg-green-900 bg-opacity-30 border border-green-800' : 'bg-yellow-900 bg-opacity-20 border border-yellow-800'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-yellow-300">{r.esp_name}</span>
+                    <span className="text-gray-400 ml-2">{r.account_identifiers?.join(', ')}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {days !== null && (
+                      <span className={days <= 7 ? 'text-red-400 font-bold' : 'text-gray-400'}>
+                        {days}d left
+                      </span>
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-xs ${r.status === 'issued' ? 'bg-green-800 text-green-300' : r.status === 'draft' ? 'bg-yellow-900 text-yellow-300' : 'bg-gray-700 text-gray-400'}`}>
+                      {r.status}
+                    </span>
+                  </div>
+                </div>
+                {r.status === 'issued' && (
+                  <a
+                    href={`${API}/preservation/${r.request_id}/download`}
+                    target="_blank"
+                    className="mt-1 inline-block bg-blue-900 hover:bg-blue-800 text-blue-200 px-2 py-0.5 rounded text-xs"
+                  >
+                    ⬇ Download Letter (PDF)
+                  </a>
+                )}
+                {r.status === 'draft' && (
+                  <button
+                    onClick={() => onIssue(r.request_id)}
+                    className="mt-1 bg-yellow-800 hover:bg-yellow-700 text-yellow-200 px-2 py-0.5 rounded"
+                  >
+                    Issue Preservation Request
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function TipDetail({ tip, onClose, onRefresh }) {
+      const [tab, setTab] = useState('files');
+      const [loading, setLoading] = useState(false);
+      const [mlatData, setMlatData] = useState(null);
+      const [mlatLoading, setMlatLoading] = useState(false);
+      const [clusterScanLoading, setClusterScanLoading] = useState(false);
+      const [circuitData, setCircuitData] = useState(null);
+
+      const updateWarrant = async (fileId, status) => {
+        setLoading(true);
+        try {
+          await fetch(`${API}/tips/${tip.tip_id}/warrant/${fileId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+          });
+          onRefresh();
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const issuePreservation = async (requestId) => {
+        setLoading(true);
+        try {
+          await fetch(`${API}/preservation/${requestId}/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approved_by: 'supervisor' }),
+          });
+          onRefresh();
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const fetchMLAT = async () => {
+        if (mlatData) return; // already fetched
+        setMlatLoading(true);
+        try {
+          const data = await fetch(`${API}/tips/${tip.tip_id}/mlat`).then(r => r.json());
+          setMlatData(data);
+        } catch (e) {
+          setMlatData({ error: 'Failed to load MLAT data' });
+        } finally {
+          setMlatLoading(false);
+        }
+      };
+
+      const fetchCircuit = async (state) => {
+        if (!state) return;
+        try {
+          const data = await fetch(`${API}/legal/circuit/${state}`).then(r => r.json());
+          setCircuitData(data);
+        } catch { }
+      };
+
+      // Fetch circuit data when legal tab opens
+      const handleTabClick = (t) => {
+        setTab(t);
+        if (t === 'mlat' && !mlatData) fetchMLAT();
+        if (t === 'legal' && !circuitData) {
+          const state = tip.jurisdiction_of_tip?.us_icac_task_force?.match(/\b([A-Z]{2})\b/)?.[1];
+          if (state) fetchCircuit(state);
+        }
+      };
+
+      const decon = tip.links?.deconfliction_matches?.filter(m => m.active_investigation) ?? [];
+      const p = tip.priority;
+      const c = tip.classification;
+      const e = tip.extracted;
+
+      return (
+        <div className="tip-detail-pane h-full flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-700">
+            <div className="flex items-center gap-3">
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-300">←</button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-lg text-white">
+                    {tip.ncmec_tip_number ?? tip.tip_id.slice(0, 8).toUpperCase()}
+                  </span>
+                  {p?.tier && <TierBadge tier={p.tier} />}
+                  {tip.status === 'BLOCKED' && (
+                    <span className="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded font-bold">BLOCKED</span>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {tip.source} · {ago(tip.received_at)} · {tip.reporter?.esp_name ?? tip.reporter?.type}
+                </div>
+              </div>
+            </div>
+            {p && (
+              <div className="text-right">
+                <div className="text-2xl font-bold" style={{ color: scoreColor(p.score) }}>{p.score}</div>
+                <div className="text-xs text-gray-500">score</div>
+              </div>
+            )}
+          </div>
+
+          {/* Crisis / deconfliction alerts */}
+          {p?.victim_crisis_alert && (
+            <div className="crisis-banner px-4 py-2 text-sm">
+              🚨 <strong>Victim Crisis Alert:</strong> {p.victim_crisis_alert_text}
+            </div>
+          )}
+          {decon.length > 0 && (
+            <div className="bg-purple-900 bg-opacity-40 border-b border-purple-700 px-4 py-2 text-sm text-purple-200 flex items-center justify-between gap-3">
+              <span>⚠ <strong>Deconfliction conflict:</strong> Active investigation by {decon.map(d => d.agency_name).join(', ')} — await supervisor coordination before proceeding.</span>
+              <button
+                onClick={async () => {
+                  if (!confirm('Confirm: deconfliction resolved with coordinating agency?')) return;
+                  await fetch(`${API}/tips/${tip.tip_id}/assign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ investigator_id: 'deconfliction_resolved', investigator_name: 'Supervisor' }),
+                  });
+                  onRefresh();
+                }}
+                className="shrink-0 bg-purple-800 hover:bg-purple-700 text-purple-200 text-xs px-3 py-1 rounded border border-purple-600"
+              >
+                ✓ Resolve Deconfliction
+              </button>
+            </div>
+          )}
+
+          {/* Recommended action */}
+          {p?.recommended_action && (
+            <div className="bg-blue-900 bg-opacity-30 border-b border-blue-800 px-4 py-2 text-sm text-blue-200">
+              <span className="text-blue-400 font-bold">ACTION: </span>{p.recommended_action}
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="flex border-b border-gray-700 text-sm overflow-x-auto">
+            {[
+              { id: 'overview', label: 'overview' },
+              { id: 'files', label: `files${tip.files?.length ? ' (' + tip.files.length + ')' : ''}` },
+              { id: 'entities', label: 'entities' },
+              { id: 'scoring', label: 'scoring' },
+              { id: 'legal', label: 'legal' },
+              { id: 'mlat', label: 'MLAT', show: tipHasInternational(tip) },
+              { id: 'clusters', label: 'clusters', show: (tip.links?.cluster_flags?.length ?? 0) > 0 },
+              { id: 'preservation', label: `preservation${tip.preservation_requests?.length ? ' (' + tip.preservation_requests.length + ')' : ''}` },
+              { id: 'audit', label: 'audit' },
+            ].filter(t => t.show !== false).map(t => (
+              <button
+                key={t.id}
+                id={`tab-${t.id}`}
+                className={`px-4 py-2 shrink-0 ${tab === t.id ? 'tab-active' : 'text-gray-500 hover:text-gray-300'}`}
+                onClick={() => handleTabClick(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {tab === 'overview' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">Offense</div>
+                    <div className="font-medium">{c?.offense_category?.replace(/_/g, ' ') ?? '—'}</div>
+                    <div className="text-xs text-gray-500">{c?.severity?.us_icac} · Confidence {c?.confidence ? (c.confidence * 100).toFixed(0) + '%' : '—'}</div>
+                  </div>
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">Routing</div>
+                    <div className="font-medium">{p?.routing_unit ?? '—'}</div>
+                    <div className="text-xs text-gray-500">{p?.routing_international_notes}</div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  {c?.aig_csam_flag && <span className="bg-yellow-900 text-yellow-300 text-xs px-2 py-1 rounded font-bold">AIG-CSAM</span>}
+                  {c?.sextortion_victim_in_crisis && <span className="bg-red-900 text-red-300 text-xs px-2 py-1 rounded font-bold">VICTIM IN CRISIS</span>}
+                  {c?.e2ee_data_gap && <span className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">E2EE gap</span>}
+                  {tip.is_bundled && <span className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">Bundled ({tip.bundled_incident_count} incidents)</span>}
+                  {tip.hash_matches?.aig_csam_detected && <span className="bg-yellow-900 text-yellow-300 text-xs px-2 py-1 rounded">Hash: AIG detected</span>}
+                  {tip.hash_matches?.any_match && <span className="bg-red-900 text-red-300 text-xs px-2 py-1 rounded">Hash match: {tip.hash_matches.match_sources.join(', ')}</span>}
+                  {tip.links?.cluster_flags?.map((f, i) => (
+                    <span key={i} className="bg-purple-900 text-purple-300 text-xs px-2 py-1 rounded">Cluster: {f.cluster_type}</span>
+                  ))}
+                </div>
+
+                {c?.reasoning && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">Classifier reasoning</div>
+                    <div className="text-sm text-gray-300">{c.reasoning}</div>
+                  </div>
+                )}
+
+                <div className="bg-gray-800 rounded p-3">
+                  <div className="text-xs text-gray-500 mb-1">Normalized tip body</div>
+                  <div className="text-sm text-gray-300 whitespace-pre-wrap max-h-40 overflow-y-auto">{tip.normalized_body}</div>
+                </div>
+
+                {c?.applicable_statutes?.length > 0 && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">Applicable statutes</div>
+                    <div className="flex flex-wrap gap-1">
+                      {c.applicable_statutes.map((s, i) => (
+                        <span key={i} className="bg-gray-700 text-gray-300 text-xs px-2 py-0.5 rounded font-mono">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tip.links?.related_tip_ids?.length > 0 && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">Related tips</div>
+                    {tip.links.related_tip_ids.map(id => (
+                      <div key={id} className="text-xs font-mono text-blue-400">{id.slice(0, 8).toUpperCase()}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'files' && (
+              <div>
+                <div className="bg-gray-800 rounded p-3 mb-3">
+                  <div className="text-xs text-gray-500 mb-2">Legal status</div>
+                  <div className={`legal-note text-xs p-2 rounded ${tip.legal_status?.any_files_accessible ? 'bg-green-900 bg-opacity-30 text-green-300' : 'bg-red-900 bg-opacity-30 text-red-300'}`}>
+                    {tip.legal_status?.legal_note}
+                  </div>
+                  {tip.legal_status?.relevant_circuit && (
+                    <div className="text-xs text-gray-500 mt-1">Circuit: {tip.legal_status.relevant_circuit}</div>
+                  )}
+                </div>
+                {tip.files?.map(file => (
+                  <div key={file.file_id}>
+                    <FileRow file={file} onWarrantUpdate={updateWarrant} />
+                    {file.warrant_status === 'applied' && (
+                      <div className="mx-1 mb-2 bg-blue-900 bg-opacity-30 rounded p-2 flex items-center justify-between">
+                        <span className="text-xs text-blue-300">Warrant applied — affidavit needed for court submission</span>
+                        <a
+                          href={`${API.replace('/api', '')}/api/warrant-applications/${tip.tip_id}/${file.file_id}/affidavit`}
+                          target="_blank"
+                          className="text-xs bg-blue-800 hover:bg-blue-700 text-blue-200 px-3 py-0.5 rounded"
+                        >📄 Generate Affidavit</a>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tab === 'entities' && e && (
+              <div className="space-y-3">
+                {e.subjects?.length > 0 && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-2">Subjects ({e.subjects.length})</div>
+                    {e.subjects.map(s => (
+                      <div key={s.subject_id} className="text-xs border-l-2 border-red-700 pl-2 mb-2">
+                        <div className="font-medium text-gray-200">{s.name ?? 'Unknown'}</div>
+                        {s.aliases?.length > 0 && <div className="text-gray-500">AKA: {s.aliases.join(', ')}</div>}
+                        {s.accounts?.length > 0 && <div className="text-gray-400">{s.accounts.join(' · ')}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {e.victims?.length > 0 && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-2">Victims</div>
+                    {e.victims.map((v, i) => (
+                      <div key={i} className="text-xs mb-1">
+                        <span className="text-orange-300 font-medium">Age: {v.age_range}</span>
+                        {v.ongoing_abuse_indicated && <span className="text-red-400 ml-2">⚠ Ongoing</span>}
+                        {v.victim_crisis_indicators?.map((c, j) => (
+                          <div key={j} className="text-red-400 mt-0.5 pl-2 border-l border-red-800">"{c}"</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {[
+                  { label: 'IPs', data: e.ip_addresses, color: 'text-blue-300' },
+                  { label: 'Emails', data: e.email_addresses, color: 'text-green-300' },
+                  { label: 'Usernames', data: e.usernames, color: 'text-yellow-300' },
+                  { label: 'Dark web', data: e.dark_web_urls, color: 'text-red-400' },
+                  { label: 'Crypto', data: e.crypto_addresses, color: 'text-orange-300' },
+                  { label: 'Venues', data: e.venues, color: 'text-purple-300' },
+                ].filter(g => g.data?.length).map(g => (
+                  <div key={g.label} className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-1">{g.label}</div>
+                    {g.data.map((item, i) => (
+                      <div key={i} className={`text-xs font-mono ${g.color}`}>{item.value}</div>
+                    ))}
+                  </div>
+                ))}
+                {e.urgency_indicators?.length > 0 && (
+                  <div className="bg-red-900 bg-opacity-30 rounded p-3">
+                    <div className="text-xs text-red-400 mb-1">⚡ Urgency indicators</div>
+                    {e.urgency_indicators.map((u, i) => <div key={i} className="text-xs text-red-300">"{u}"</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'scoring' && (
+              <div className="space-y-3">
+                {p && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="flex justify-between mb-3">
+                      <div>
+                        <div className="text-3xl font-bold" style={{ color: scoreColor(p.score) }}>{p.score}</div>
+                        <TierBadge tier={p.tier} />
+                      </div>
+                      <div className="text-right text-xs text-gray-500">
+                        <div>{p.routing_unit}</div>
+                        {p.assigned_to && <div className="text-blue-400 mt-1">→ {p.assigned_to}</div>}
+                      </div>
+                    </div>
+                    <ScoringBreakdown factors={p.scoring_factors} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'preservation' && (
+              <PreservationManager
+                requests={tip.preservation_requests}
+                tipId={tip.tip_id}
+                onIssue={issuePreservation}
+              />
+            )}
+
+            {/* ─── LEGAL TAB (Tier 4.1) ─── */}
+            {tab === 'legal' && (
+              <div className="space-y-4">
+                <div className="bg-gray-800 rounded p-3">
+                  <div className="text-xs text-gray-500 mb-2">Fourth Amendment Status</div>
+                  <div className={`text-xs p-2 rounded ${tip.legal_status?.any_files_accessible ? 'bg-green-900 bg-opacity-40 text-green-200' : 'bg-red-900 bg-opacity-40 text-red-200'}`}>
+                    {tip.legal_status?.legal_note ?? 'Legal analysis pending.'}
+                  </div>
+                  {tip.legal_status?.relevant_circuit && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Circuit:</span>
+                      <span className="text-xs font-bold text-blue-300">{tip.legal_status.relevant_circuit}</span>
+                    </div>
+                  )}
+                </div>
+
+                {circuitData && (
+                  <div className="bg-gray-800 rounded p-3">
+                    <div className="text-xs text-gray-500 mb-2 flex items-center gap-2">
+                      <span>Circuit Analysis — {circuitData.circuit} Circuit ({circuitData.state})</span>
+                      {circuitData.circuit === '9th' && (
+                        <span className="bg-red-900 text-red-300 text-xs px-1.5 py-0.5 rounded font-bold">BINDING</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-300 leading-relaxed">{circuitData.summary}</div>
+                    {circuitData.precedent_history?.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 mb-1">Precedent History</div>
+                        {circuitData.precedent_history.map((p, i) => (
+                          <div key={i} className="text-xs border-l-2 border-blue-700 pl-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-blue-300">{p.citation}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${p.effect === 'now_binding' ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-300'}`}>{p.effect}</span>
+                            </div>
+                            <div className="text-gray-400 mt-0.5">{p.summary}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!circuitData && (
+                  <div className="text-xs text-gray-600 p-2">
+                    {tip.jurisdiction_of_tip?.us_icac_task_force
+                      ? 'Loading circuit data...'
+                      : 'No US jurisdiction identified — international tip. See MLAT tab.'}
+                  </div>
+                )}
+
+                <div className="bg-gray-800 rounded p-3">
+                  <div className="text-xs text-gray-500 mb-2">All Circuits Quick Reference</div>
+                  <div className="text-xs text-gray-400 leading-relaxed">
+                    <span className="text-red-300 font-bold">9th Circuit (binding)</span> — Wilson v. US (2020): Warrant required when ESP did not view file.<br />
+                    <span className="text-yellow-300">All other circuits</span> — No binding precedent. Conservative Wilson applied.<br />
+                    <span className="text-blue-300">CLOUD Act countries</span> — CA, GB, AU: faster than MLAT (2–6 weeks).<br />
+                    <a href="${API.replace('/api','')}/dashboard/quickstart.html" target="_blank" className="text-blue-400 underline">Full legal reference →</a>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ─── MLAT TAB (Tier 4.3) ─── */}
+            {tab === 'mlat' && (
+              <div className="space-y-4">
+                {mlatLoading && <div className="text-center text-gray-500 py-4">Loading MLAT analysis...</div>}
+                {mlatData?.error && <div className="text-red-400 text-xs p-2">{mlatData.error}</div>}
+                {mlatData && !mlatLoading && !mlatData.needs_mlat && (
+                  <div className="bg-gray-800 rounded p-3 text-xs text-gray-400">
+                    No international subjects identified. MLAT not required for this tip.
+                  </div>
+                )}
+                {mlatData?.requests?.map((req, i) => (
+                  <div key={i} className="bg-gray-800 rounded p-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="font-bold text-white">{req.treaty_profile?.country_name}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">Tracking: {req.tracking_id}</div>
+                      </div>
+                      <div>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${req.recommended_mechanism === 'cloud_act' ? 'bg-green-900 text-green-300' :
+                          req.recommended_mechanism === 'mlat' ? 'bg-blue-900 text-blue-300' :
+                            'bg-yellow-900 text-yellow-300'
+                          }`}>
+                          {req.recommended_mechanism?.toUpperCase().replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-300 mb-2 leading-relaxed">{req.mechanism_rationale}</div>
+
+                    <div className="flex items-center gap-3 text-xs mb-3">
+                      <span className="text-gray-500">Timeline:</span>
+                      <span className={`font-medium ${req.estimated_timeline?.includes('week') ? 'text-green-400' : 'text-yellow-400'}`}>
+                        {req.estimated_timeline}
+                      </span>
+                      {req.requires_translation && (
+                        <span className="bg-orange-900 text-orange-300 px-1.5 py-0.5 rounded">
+                          🌐 Needs {req.translation_language} translation
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs mb-3">
+                      <span className="text-gray-500">DOJ OIA:</span>
+                      <span className="text-blue-300">{req.doj_oia_contact}</span>
+                    </div>
+
+                    <details className="mt-2">
+                      <summary className="text-xs text-blue-400 cursor-pointer hover:text-blue-300">
+                        📄 View preservation request (send first)
+                      </summary>
+                      <pre className="mt-2 text-xs bg-gray-900 p-3 rounded overflow-x-auto whitespace-pre-wrap text-gray-300 font-mono max-h-48 overflow-y-auto">
+                        {req.preservation_draft}
+                      </pre>
+                    </details>
+
+                    <details className="mt-2">
+                      <summary className="text-xs text-blue-400 cursor-pointer hover:text-blue-300">
+                        📄 View full MLAT request draft
+                      </summary>
+                      <pre className="mt-2 text-xs bg-gray-900 p-3 rounded overflow-x-auto whitespace-pre-wrap text-gray-300 font-mono max-h-64 overflow-y-auto">
+                        {req.request_draft}
+                      </pre>
+                      <button
+                        onClick={() => {
+                          const el = document.createElement('a');
+                          el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(req.request_draft);
+                          el.download = `${req.tracking_id}.txt`;
+                          el.click();
+                        }}
+                        className="mt-2 bg-blue-900 hover:bg-blue-800 text-blue-200 text-xs px-3 py-1 rounded"
+                      >
+                        ⬇ Download draft (.txt)
+                      </button>
+                    </details>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── CLUSTERS TAB (Tier 4.2) ─── */}
+            {tab === 'clusters' && (
+              <div className="space-y-3">
+                {(!tip.links?.cluster_flags?.length) && (
+                  <div className="text-xs text-gray-600 p-2">No cluster patterns detected for this tip.</div>
+                )}
+                {(tip.links?.cluster_flags ?? []).map((cf, i) => (
+                  <div key={i} className="cluster-alert bg-gray-800 rounded p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="font-bold text-yellow-300 capitalize">
+                          {cf.cluster_type?.replace(/_/g, ' ')}
+                        </span>
+                        {cf.cluster_id && (
+                          <span className="text-gray-600 text-xs ml-2 font-mono">{cf.cluster_id.slice(0, 8)}</span>
+                        )}
+                      </div>
+                      <span className="text-sm font-bold text-orange-300">{cf.tip_count} tips</span>
+                    </div>
+                    <div className="text-xs text-gray-300 mb-2">{cf.description}</div>
+                    <div className="text-xs text-gray-500">
+                      Window: {cf.time_window_days} days
+                    </div>
+                  </div>
+                ))}
+                <div className="text-xs text-gray-600 p-2 border border-gray-700 rounded">
+                  Clusters are computed nightly by the background scan job. Run a manual scan from
+                  the <button onClick={() => { }} className="text-blue-400 underline">admin panel</button> to force immediate re-analysis.
+                </div>
+              </div>
+            )}
+
+            {tab === 'audit' && <AuditTrail entries={tip.audit_trail} />}
+          </div>
+        </div>
+      );
+    }
+
+    // 1. StatsBar -> .stats-card
+    function StatsBar({ stats }) {
+      if (!stats) return null;
+      return (
+        <div className="stats-card flex gap-4 px-4 py-2 bg-gray-800 border-b border-gray-700 text-xs text-gray-400">
+          <span>Queue: <strong className="text-white">{stats.queue?.waiting ?? 0}</strong> waiting</span>
+
+
+          <span className="text-red-400">IMMEDIATE: <strong>{stats.tips?.by_tier?.IMMEDIATE ?? 0}</strong></span>
+          <span className="text-orange-400">URGENT: <strong>{stats.tips?.by_tier?.URGENT ?? 0}</strong></span>
+          <span className="text-purple-400">PAUSED: <strong>{stats.tips?.by_tier?.PAUSED ?? 0}</strong></span>
+          {stats.tips?.crisis_alerts > 0 && (
+            <span className="text-red-400 font-bold">🚨 {stats.tips.crisis_alerts} crisis alert{stats.tips.crisis_alerts > 1 ? 's' : ''}</span>
+          )}
+        </div>
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────────────────────────
+
+    // ── Constants ─────────────────────────────────────────────────────────────────
+
+    const PAGE_SIZE = 25; // Tips per page in the queue panel
+
+    // ── Main App ──────────────────────────────────────────────────────────────────
+
+    function App() {
+      const [queue, setQueue] = useState({});
+      const [totalCounts, setTotalCounts] = useState({});
+      const [stats, setStats] = useState(null);
+      const [selectedTip, setSelectedTip] = useState(null);
+      const [tierFilter, setTierFilter] = useState('ALL');
+      const [page, setPage] = useState(0);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const pollRef = useRef(null);
+      // Refs keep polling closure fresh without re-creating the interval
+      const tierRef = useRef('ALL');
+      const pageRef = useRef(0);
+
+      const doFetch = useCallback(async (tier, pageIdx) => {
+        try {
+          const offset = pageIdx * PAGE_SIZE;
+          const tierParam = tier !== 'ALL' ? `&tier=${tier}` : '';
+          const [qRes, sRes] = await Promise.all([
+            fetch(`${API}/queue?limit=${PAGE_SIZE}&offset=${offset}${tierParam}`),
+            fetch(`${API}/stats`).then(r => r.json()),
+          ]);
+          const total = parseInt(qRes.headers.get('X-Total-Count') ?? '0', 10);
+          const data = await qRes.json();
+          setQueue(data);
+          setStats(sRes);
+          setTotalCounts(prev => ({ ...prev, [tier]: total }));
+          setError(null);
+        } catch {
+          setError('Cannot reach API — is the server running?');
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+
+      // Initial load + re-fetch when tier or page changes
+      useEffect(() => {
+        setLoading(true);
+        tierRef.current = tierFilter;
+        pageRef.current = page;
+        doFetch(tierFilter, page);
+      }, [tierFilter, page, doFetch]);
+
+      // Polling — uses refs so interval never needs to be recreated
+      useEffect(() => {
+        pollRef.current = setInterval(() => doFetch(tierRef.current, pageRef.current), 15000);
+        return () => clearInterval(pollRef.current);
+      }, [doFetch]);
+
+      const refreshTip = useCallback(async () => {
+        if (!selectedTip) return;
+        try {
+          const tip = await fetch(`${API}/tips/${selectedTip.tip_id}`).then(r => r.json());
+          setSelectedTip(tip);
+        } catch { }
+        doFetch(tierRef.current, pageRef.current);
+      }, [selectedTip, doFetch]);
+
+      const handleTierFilter = (t) => {
+        setTierFilter(t);
+        setPage(0);
+      };
+
+      const allTips = Object.values(queue).flat();
+      const crisisTips = allTips.filter(t => t.priority?.victim_crisis_alert);
+
+      const tiers = ['ALL', 'IMMEDIATE', 'URGENT', 'PAUSED', 'STANDARD', 'MONITOR'];
+      const filteredTips = tierFilter === 'ALL' ? allTips : (queue[tierFilter] ?? []);
+
+      // Pagination math — prefer stats.tips.by_tier for per-tier totals (always accurate)
+      // For 'ALL', use X-Total-Count from the last fetch
+      const totalForFilter = tierFilter === 'ALL'
+        ? (totalCounts['ALL'] ?? stats?.tips?.total ?? 0)
+        : (stats?.tips?.by_tier?.[tierFilter] ?? totalCounts[tierFilter] ?? 0);
+      const totalPages = Math.max(1, Math.ceil(totalForFilter / PAGE_SIZE));
+      const showPagination = totalForFilter > PAGE_SIZE;
+
+      return (
+        <div className="flex flex-col h-screen">
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+            <div className="flex items-center gap-3">
+              <span className="text-red-500 text-lg">🛡</span>
+              <span className="font-bold text-white">CyberTip Triage</span>
+              <span className="text-gray-600 text-xs">ICAC Automated Triage System</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <a href="/quickstart" target="_blank" className="text-gray-500 hover:text-gray-300 text-xs">Quick Ref</a>
+              <a href="/mobile" target="_blank" className="text-gray-500 hover:text-gray-300 text-xs">Mobile</a>
+              <a href={`${API}/reports/ojjdp/download?format=csv`} target="_blank" className="text-gray-500 hover:text-gray-300 text-xs">OJJDP ⬇</a>
+              <a href="/tier4" target="_blank" className="text-gray-500 hover:text-gray-300 text-xs">Admin</a>
+              <button onClick={() => doFetch(tierFilter, page)} className="text-gray-500 hover:text-gray-300 text-xs">↻ Refresh</button>
+              <span className="text-gray-700 text-xs">{new Date().toLocaleTimeString()}</span>
+            </div>
+          </div>
+
+          {crisisTips.length > 0 && <CrisisBanner tips={crisisTips} />}
+          <StatsBar stats={stats} />
+
+          <div className="flex flex-1 min-h-0">
+            {/* Queue panel */}
+            <div className="w-80 flex flex-col border-r border-gray-700">
+              {/* Tier filter */}
+              <div className="flex gap-0 border-b border-gray-700 overflow-x-auto">
+                {tiers.map(t => (
+                  <button
+                    key={t}
+                    id={`tier-filter-${t}`}
+                    onClick={() => handleTierFilter(t)}
+                    className={`text-xs px-3 py-2 shrink-0 ${tierFilter === t ? 'tab-active bg-gray-800' : 'text-gray-500 hover:text-gray-300'}`}
+                  >
+                    {t}
+                    {t !== 'ALL' && stats?.tips?.by_tier?.[t] ? ` (${stats.tips.by_tier[t]})` : ''}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3">
+                {loading ? (
+                  <div className="text-center text-gray-500 mt-8 text-sm">Loading...</div>
+                ) : error ? (
+                  <div className="text-center text-red-400 mt-8 text-sm">{error}</div>
+                ) : filteredTips.length === 0 ? (
+                  <div className="text-center text-gray-600 mt-8 text-sm">No tips in queue</div>
+                ) : (
+                  filteredTips.map(tip => (
+                    <TipRow
+                      key={tip.tip_id}
+                      tip={tip}
+                      onClick={setSelectedTip}
+                      selected={selectedTip?.tip_id === tip.tip_id}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Pagination controls */}
+              {showPagination && (
+                <div className="border-t border-gray-700 px-3 py-2 flex items-center justify-between text-xs text-gray-500">
+                  <button
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >← Prev</button>
+                  <span>
+                    Page {page + 1} / {totalPages}
+                    <span className="ml-1 text-gray-600">({totalForFilter} total)</span>
+                  </span>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={page >= totalPages - 1}
+                    className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >Next →</button>
+                </div>
+              )}
+            </div>
+
+            {/* Detail panel */}
+            <div className="flex-1 overflow-hidden">
+              {selectedTip ? (
+                <TipDetail
+                  tip={selectedTip}
+                  onClose={() => setSelectedTip(null)}
+                  onRefresh={refreshTip}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-gray-600">
+                  <div className="text-5xl mb-4">🛡</div>
+                  <div className="text-lg font-medium">Select a tip to review</div>
+                  <div className="text-sm mt-1">
+                    {stats?.tips?.total ?? 0} tip{stats?.tips?.total !== 1 ? 's' : ''} in system
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+
+</html>

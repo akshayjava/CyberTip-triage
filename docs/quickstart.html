@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CyberTip Triage — Quick Start Card</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .no-print { display: none; }
+      .page { box-shadow: none; margin: 0; }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f0f4f8;
+      font-family: 'IBM Plex Sans', sans-serif;
+      padding: 20px;
+      color: #1a2332;
+    }
+
+    .no-print {
+      text-align: center; margin-bottom: 20px;
+    }
+    .print-btn {
+      background: #1a4fa0; color: #fff; border: none;
+      font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+      padding: 10px 28px; cursor: pointer; letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .print-btn:hover { background: #2563c7; }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      background: #fff;
+      margin: 0 auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    /* Header */
+    .header {
+      background: #0d1b2e;
+      padding: 20px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .header-icon { font-size: 28px; }
+    .header h1 { color: #fff; font-size: 18px; font-weight: 700; }
+    .header h2 { color: #5a9adf; font-size: 12px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+    .header-badge {
+      background: #7f1d1d; color: #fca5a5;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; padding: 4px 10px;
+      letter-spacing: 0.1em; font-weight: 600;
+    }
+
+    /* Body */
+    .body { padding: 20px 28px; }
+
+    .section { margin-bottom: 18px; }
+    .section-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; font-weight: 600;
+      color: #5a7090; letter-spacing: 0.15em;
+      text-transform: uppercase;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 5px; margin-bottom: 10px;
+    }
+
+    /* Steps */
+    .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .step {
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start;
+    }
+    .step-num {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #1a4fa0; color: #fff;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-text { font-size: 12px; line-height: 1.5; }
+    .step-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+    .step-code {
+      font-family: 'IBM Plex Mono', monospace;
+      background: #0d1b2e; color: #7dd3fc;
+      font-size: 11px; padding: 2px 6px; display: inline-block; margin-top: 3px;
+    }
+
+    /* Three-column layout */
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+    /* Tier cards */
+    .tier-card {
+      border: 1px solid #e2e8f0; padding: 8px 10px;
+    }
+    .tier-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 4px; padding: 2px 6px;
+      display: inline-block;
+    }
+    .tier-label.IMMEDIATE { background: #fee2e2; color: #991b1b; }
+    .tier-label.URGENT    { background: #fef3c7; color: #92400e; }
+    .tier-label.STANDARD  { background: #dbeafe; color: #1e40af; }
+    .tier-label.MONITOR   { background: #f1f5f9; color: #475569; }
+    .tier-label.PAUSED    { background: #f3e8ff; color: #6b21a8; }
+    .tier-score { font-size: 10px; color: #64748b; margin-bottom: 4px; }
+    .tier-desc { font-size: 11px; color: #374151; line-height: 1.4; }
+
+    /* Wilson box */
+    .wilson-box {
+      background: #fff7ed; border: 2px solid #f97316;
+      padding: 12px 14px;
+    }
+    .wilson-title { font-size: 13px; font-weight: 700; color: #c2410c; margin-bottom: 6px; }
+    .wilson-rules { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .wilson-rule { font-size: 11px; color: #374151; line-height: 1.4; padding-left: 14px; position: relative; }
+    .wilson-rule::before { content: '→'; position: absolute; left: 0; color: #f97316; font-weight: 700; }
+
+    /* Crisis box */
+    .crisis-box {
+      background: #fef2f2; border: 2px solid #ef4444;
+      padding: 12px 14px;
+    }
+    .crisis-title { font-size: 13px; font-weight: 700; color: #991b1b; margin-bottom: 6px; }
+    .crisis-indicators { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .crisis-indicator {
+      font-size: 11px; color: #374151;
+      background: #fee2e2; padding: 3px 8px;
+      font-style: italic;
+    }
+
+    /* Checklist */
+    .checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .check-item {
+      display: flex; align-items: flex-start; gap: 6px;
+      font-size: 11px; color: #374151; line-height: 1.4;
+    }
+    .check-box {
+      width: 13px; height: 13px; border: 1.5px solid #94a3b8;
+      flex-shrink: 0; margin-top: 1px;
+    }
+
+    /* Contacts table */
+    .contacts { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .contacts th {
+      background: #f1f5f9; font-size: 9px; font-family: 'IBM Plex Mono', monospace;
+      letter-spacing: 0.1em; text-transform: uppercase; color: #64748b;
+      padding: 5px 8px; text-align: left; border: 1px solid #e2e8f0;
+    }
+    .contacts td { padding: 5px 8px; border: 1px solid #e2e8f0; color: #374151; }
+    .contacts tr:nth-child(even) td { background: #f8fafc; }
+
+    /* Preservation table */
+    .esp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .esp-table th { background: #f1f5f9; padding: 5px 8px; text-align: left; font-size: 9px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; border: 1px solid #e2e8f0; }
+    .esp-table td { padding: 5px 8px; border: 1px solid #e2e8f0; }
+    .urgent-days { color: #c2410c; font-weight: 600; }
+
+    /* Footer */
+    .footer {
+      background: #0d1b2e; padding: 12px 28px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-text { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #5a7090; letter-spacing: 0.08em; }
+    .footer-url { color: #5a9adf; }
+  </style>
+</head>
+<body>
+
+<div class="no-print">
+  <button class="print-btn" onclick="window.print()">🖨 Print Quick-Start Card</button>
+  <p style="margin-top:8px;font-size:13px;color:#64748b">Or save as PDF from your browser's print dialog</p>
+</div>
+
+<div class="page">
+  <div class="header">
+    <div class="header-left">
+      <div class="header-icon">🛡</div>
+      <div>
+        <h1>CyberTip Triage</h1>
+        <h2>ICAC Task Force Quick-Start Reference</h2>
+      </div>
+    </div>
+    <div class="header-badge">LAW ENFORCEMENT ONLY</div>
+  </div>
+
+  <div class="body">
+
+    <!-- Setup Steps -->
+    <div class="section">
+      <div class="section-title">Initial Setup (30 minutes)</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text">
+            <strong>Install Docker Desktop</strong>
+            docker.com/products/docker-desktop<br/>
+            (Windows, Mac, or Linux)
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text">
+            <strong>Download CyberTip Triage</strong>
+            <span class="step-code">git clone github.com/akshayjava/cybertip-triage</span>
+            Or download ZIP from GitHub
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text">
+            <strong>Run Setup Wizard</strong>
+            Open terminal in the download folder:<br/>
+            <span class="step-code">node setup/wizard.mjs</span>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-text">
+            <strong>Start the System</strong>
+            <span class="step-code">./start.sh</span>
+            Then open: <strong>localhost:3000/dashboard</strong>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-text">
+            <strong>Get Anthropic API Key</strong>
+            console.anthropic.com → API Keys → Create Key<br/>
+            Enter during setup wizard or add to .env
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">6</div>
+          <div class="step-text">
+            <strong>Connect IDS Portal</strong>
+            Add IDS credentials in setup wizard or at<br/>
+            localhost:3000/setup
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Priority Tiers -->
+    <div class="section">
+      <div class="section-title">Priority Tiers (Score 0–100)</div>
+      <div class="three-col" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr">
+        <div class="tier-card">
+          <div><span class="tier-label IMMEDIATE">IMMEDIATE</span></div>
+          <div class="tier-score">85–100</div>
+          <div class="tier-desc">Supervisor alert. Assign within 1 hour. Active victim risk.</div>
+        </div>
+        <div class="tier-card">
+          <div><span class="tier-label URGENT">URGENT</span></div>
+          <div class="tier-score">60–84</div>
+          <div class="tier-desc">Assign within 24 hours. Strong evidence, no immediate danger.</div>
+        </div>
+        <div class="tier-card">
+          <div><span class="tier-label STANDARD">STANDARD</span></div>
+          <div class="tier-score">30–59</div>
+          <div class="tier-desc">Weekly queue. Historical material, lower confidence.</div>
+        </div>
+        <div class="tier-card">
+          <div><span class="tier-label MONITOR">MONITOR</span></div>
+          <div class="tier-score">0–29</div>
+          <div class="tier-desc">30-day review. Thin tips, no actionable IDs.</div>
+        </div>
+        <div class="tier-card">
+          <div><span class="tier-label PAUSED">PAUSED</span></div>
+          <div class="tier-score">Any</div>
+          <div class="tier-desc">De-confliction match. Supervisor coordinates with other agency before any action.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wilson + Crisis side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+
+      <div class="wilson-box">
+        <div class="wilson-title">⚖ Wilson Ruling — File Access Rules</div>
+        <div class="wilson-rules">
+          <div class="wilson-rule">ESP <strong>viewed</strong> file before reporting → Accessible. No warrant needed.</div>
+          <div class="wilson-rule">ESP did <strong>not</strong> view file → BLOCKED. Warrant required.</div>
+          <div class="wilson-rule">ESP viewed flag <strong>missing</strong> → BLOCKED (conservative default).</div>
+          <div class="wilson-rule">Warrant <strong>granted</strong> → System automatically unlocks file.</div>
+        </div>
+        <div style="font-size:10px;color:#c2410c;margin-top:8px;font-weight:600">🔒 Never bypass blocked status. The system enforces this technically.</div>
+      </div>
+
+      <div class="crisis-box">
+        <div class="crisis-title">🚨 Victim Crisis Alert Triggers</div>
+        <div style="font-size:11px;color:#374151;margin-bottom:8px">Immediately flags: Sextortion + Minor victim + ANY of:</div>
+        <div class="crisis-indicators">
+          <div class="crisis-indicator">"I want to die"</div>
+          <div class="crisis-indicator">"can't live like this"</div>
+          <div class="crisis-indicator">"going to hurt myself"</div>
+          <div class="crisis-indicator">"no way out"</div>
+          <div class="crisis-indicator">"nobody can find out"</div>
+          <div class="crisis-indicator">"kill myself"</div>
+        </div>
+        <div style="font-size:10px;color:#991b1b;margin-top:8px;font-weight:600">Dispatch crisis intervention before any investigative contact.</div>
+      </div>
+
+    </div>
+
+    <!-- ESP Retention + Pre-Production Checklist -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+
+      <div class="section" style="margin-bottom:0">
+        <div class="section-title">ESP Data Retention (2703f Deadlines)</div>
+        <table class="esp-table">
+          <tr><th>Platform</th><th>Window</th><th>Notes</th></tr>
+          <tr><td>Signal / Telegram</td><td class="urgent-days">0 days</td><td>No retention — act immediately</td></tr>
+          <tr><td>X (Twitter)</td><td class="urgent-days">30 days</td><td>Urgent</td></tr>
+          <tr><td>Discord / Snapchat</td><td class="urgent-days">30 days</td><td>Urgent</td></tr>
+          <tr><td>Meta / Instagram</td><td>90 days</td><td></td></tr>
+          <tr><td>Roblox / Kik</td><td>90 days</td><td></td></tr>
+          <tr><td>Google / YouTube</td><td>180 days</td><td></td></tr>
+          <tr><td>Apple / iCloud</td><td>180 days</td><td></td></tr>
+          <tr><td>TikTok</td><td>180 days</td><td></td></tr>
+        </table>
+        <div style="font-size:10px;color:#64748b;margin-top:5px">The system shows a countdown on every tip. Draft preservation letters are generated automatically.</div>
+      </div>
+
+      <div class="section" style="margin-bottom:0">
+        <div class="section-title">Pre-Production Checklist</div>
+        <div class="checklist">
+          <div class="check-item"><div class="check-box"></div>Legal counsel reviewed Wilson Ruling implementation</div>
+          <div class="check-item"><div class="check-box"></div>CJIS compliance review with agency CISO</div>
+          <div class="check-item"><div class="check-box"></div>Warrant workflow approved by DA's office</div>
+          <div class="check-item"><div class="check-box"></div>NCMEC API credentials obtained</div>
+          <div class="check-item"><div class="check-box"></div>IDS Portal credentials configured</div>
+          <div class="check-item"><div class="check-box"></div>Project VIC registration completed</div>
+          <div class="check-item"><div class="check-box"></div>RISSafe / HighWay de-confliction connected</div>
+          <div class="check-item"><div class="check-box"></div>Test tip processed successfully</div>
+          <div class="check-item"><div class="check-box"></div>Investigator acceptance testing (2 weeks)</div>
+          <div class="check-item"><div class="check-box"></div>Security penetration test completed</div>
+          <div class="check-item"><div class="check-box"></div>Backup / recovery plan tested</div>
+          <div class="check-item"><div class="check-box"></div>Audit log integrity verified</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Contacts & Resources -->
+    <div class="section" style="margin-bottom:0">
+      <div class="section-title">Key Contacts &amp; Resources</div>
+      <table class="contacts">
+        <tr>
+          <th>Resource</th><th>URL / Contact</th><th>Purpose</th>
+        </tr>
+        <tr><td>Anthropic Console</td><td>console.anthropic.com</td><td>API key management, usage monitoring</td></tr>
+        <tr><td>NCMEC CyberTipline</td><td>missingkids.org/gethelpnow/cyberTipline</td><td>API credentials, tip questions</td></tr>
+        <tr><td>ICAC Data System</td><td>icacdatasystem.com</td><td>IDS Portal credentials and support</td></tr>
+        <tr><td>Project VIC</td><td>projectvic.org</td><td>Hash matching integration</td></tr>
+        <tr><td>IWF LE Liaison</td><td>iwf.org.uk/law-enforcement</td><td>IWF hash list access</td></tr>
+        <tr><td>System Status</td><td>localhost:3000/status</td><td>Integration health at a glance</td></tr>
+        <tr><td>Setup Wizard</td><td>localhost:3000/setup</td><td>Change configuration anytime</td></tr>
+        <tr><td>Demo Mode</td><td>localhost:3000/demo</td><td>Train new investigators on synthetic data</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="footer-text">CyberTip Triage · ICAC Task Force Automation · <span class="footer-url">github.com/akshayjava/cybertip-triage</span></div>
+    <div class="footer-text">All AI outputs are recommendations only. Human review required for all investigative action.</div>
+  </div>
+</div>
+
+</body>
+</html>

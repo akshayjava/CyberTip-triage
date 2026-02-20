@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CyberTip Triage — System Status</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0e18; --surface: #111828; --border: #1e2a3a;
+      --text: #c8d8e8; --muted: #5a7090; --accent: #2d8cf0;
+      --green: #22c55e; --yellow: #f59e0b; --red: #ef4444;
+      --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); padding: 0; min-height: 100vh; }
+
+    .topbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 32px; display: flex; align-items: center; gap: 12px;
+    }
+    .topbar h1 { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+    .topbar a { margin-left: auto; font-size: 12px; color: var(--muted); text-decoration: none; }
+    .topbar a:hover { color: var(--accent); }
+
+    .page { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+
+    .overall-status {
+      display: flex; align-items: center; gap: 18px;
+      padding: 24px 28px; margin-bottom: 40px;
+      border: 1px solid var(--border); background: var(--surface);
+    }
+    .big-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .big-dot.green { background: var(--green); box-shadow: 0 0 14px rgba(34,197,94,0.6); }
+    .big-dot.yellow { background: var(--yellow); box-shadow: 0 0 14px rgba(245,158,11,0.5); }
+    .big-dot.red { background: var(--red); box-shadow: 0 0 14px rgba(239,68,68,0.5); }
+    .overall-label { font-size: 18px; font-weight: 600; color: #e8f4ff; }
+    .overall-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .refresh-btn {
+      margin-left: auto; background: transparent; border: 1px solid var(--border);
+      color: var(--muted); font-family: var(--mono); font-size: 11px;
+      padding: 7px 14px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .section { margin-bottom: 36px; }
+    .section-title {
+      font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--muted);
+      letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 14px;
+    }
+
+    .check-grid { display: grid; gap: 2px; }
+    .check-row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 16px; background: var(--surface);
+      border-left: 3px solid transparent;
+    }
+    .check-row.ok     { border-color: var(--green); }
+    .check-row.warn   { border-color: var(--yellow); }
+    .check-row.err    { border-color: var(--red); }
+    .check-row.skip   { border-color: var(--muted); opacity: 0.6; }
+    .check-row.spin   { border-color: var(--accent); }
+
+    .check-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 14px; }
+    .check-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .check-detail { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .check-action { font-size: 11px; }
+    .check-action a { color: var(--accent); text-decoration: none; }
+    .check-action a:hover { text-decoration: underline; }
+
+    .spin-icon { display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    .queue-stats {
+      display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; margin-top: 12px;
+    }
+    .stat-box { background: var(--surface); padding: 14px 16px; text-align: center; }
+    .stat-num { font-family: var(--mono); font-size: 22px; font-weight: 600; color: #e8f4ff; }
+    .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.07em; }
+    .stat-box.immediate .stat-num { color: var(--red); }
+    .stat-box.urgent .stat-num { color: var(--yellow); }
+
+    .log-box {
+      background: #060a10; border: 1px solid var(--border);
+      font-family: var(--mono); font-size: 11px; color: #7dd3fc;
+      padding: 16px; height: 160px; overflow-y: auto;
+    }
+    .log-line { margin-bottom: 4px; }
+    .log-ts { color: var(--muted); }
+    .log-ok { color: var(--green); }
+    .log-err { color: var(--red); }
+    .log-warn { color: var(--yellow); }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <span>🛡</span>
+  <h1>System Status</h1>
+  <a href="/dashboard">← Dashboard</a>
+  <a href="/setup" style="margin-left:8px">Setup</a>
+</div>
+
+<div class="page">
+
+  <!-- Overall status -->
+  <div class="overall-status">
+    <div class="big-dot" id="overall-dot"></div>
+    <div>
+      <div class="overall-label" id="overall-label">Checking system...</div>
+      <div class="overall-sub" id="overall-sub"></div>
+    </div>
+    <button class="refresh-btn" onclick="checkAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Queue stats -->
+  <div class="section">
+    <div class="section-title">Queue</div>
+    <div class="queue-stats" id="queue-stats">
+      <div class="stat-box immediate"><div class="stat-num" id="q-immediate">—</div><div class="stat-label">Immediate</div></div>
+      <div class="stat-box urgent"><div class="stat-num" id="q-urgent">—</div><div class="stat-label">Urgent</div></div>
+      <div class="stat-box"><div class="stat-num" id="q-paused">—</div><div class="stat-label">Paused</div></div>
+      <div class="stat-box"><div class="stat-num" id="q-waiting">—</div><div class="stat-label">Waiting</div></div>
+      <div class="stat-box"><div class="stat-num" id="q-total">—</div><div class="stat-label">Total Tips</div></div>
+    </div>
+  </div>
+
+  <!-- Core services -->
+  <div class="section">
+    <div class="section-title">Core Services</div>
+    <div class="check-grid" id="core-checks">
+      <div class="check-row spin"><span class="check-icon"><span class="spin-icon">◌</span></span><span class="check-name">Checking...</span></div>
+    </div>
+  </div>
+
+  <!-- Tip sources -->
+  <div class="section">
+    <div class="section-title">Tip Sources</div>
+    <div class="check-grid" id="source-checks">
+      <div class="check-row spin"><span class="check-icon"><span class="spin-icon">◌</span></span><span class="check-name">Checking...</span></div>
+    </div>
+  </div>
+
+  <!-- External APIs -->
+  <div class="section">
+    <div class="section-title">External APIs (Hash Matching & De-Confliction)</div>
+    <div class="check-grid" id="api-checks">
+      <div class="check-row spin"><span class="check-icon"><span class="spin-icon">◌</span></span><span class="check-name">Checking...</span></div>
+    </div>
+  </div>
+
+  <!-- Recent log -->
+  <div class="section">
+    <div class="section-title">Recent System Events</div>
+    <div class="log-box" id="log-box">
+      <div class="log-line"><span class="log-ts">[loading]</span> Fetching log entries...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const statusIcon = { ok: '✓', warn: '⚠', err: '✗', skip: '—', spin: '◌' };
+
+function makeRow(status, name, detail, action) {
+  const icon = status === 'spin' ? '<span class="spin-icon">◌</span>' : statusIcon[status];
+  return `<div class="check-row ${status}">
+    <span class="check-icon">${icon}</span>
+    <span class="check-name">${name}</span>
+    <span class="check-detail">${detail ?? ''}</span>
+    ${action ? `<span class="check-action">${action}</span>` : ''}
+  </div>`;
+}
+
+function setOverall(type, label, sub) {
+  const dot = document.getElementById('overall-dot');
+  dot.className = 'big-dot ' + (type === 'ok' ? 'green' : type === 'warn' ? 'yellow' : 'red');
+  document.getElementById('overall-label').textContent = label;
+  document.getElementById('overall-sub').textContent = sub;
+}
+
+async function fetchJson(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function checkAll() {
+  const [health, stats] = await Promise.all([
+    fetchJson('/health/detailed'),
+    fetchJson('/api/stats'),
+  ]);
+
+  // Queue stats
+  if (stats) {
+    document.getElementById('q-immediate').textContent = stats.tips?.by_tier?.IMMEDIATE ?? 0;
+    document.getElementById('q-urgent').textContent = stats.tips?.by_tier?.URGENT ?? 0;
+    document.getElementById('q-paused').textContent = stats.tips?.by_tier?.PAUSED ?? 0;
+    document.getElementById('q-waiting').textContent = stats.queue?.waiting ?? 0;
+    document.getElementById('q-total').textContent = stats.tips?.total ?? 0;
+  }
+
+  if (!health) {
+    setOverall('warn', 'Server is reachable', 'Could not load detailed status — check /health endpoint');
+    renderFallback();
+    return;
+  }
+
+  // Core services
+  const coreRows = [
+    makeRow(health.api === 'ok' ? 'ok' : 'err', 'API Server', health.api === 'ok' ? 'Responding' : 'Not responding'),
+    makeRow(health.db === 'ok' ? 'ok' : health.db === 'memory' ? 'warn' : 'err', 'Database',
+      health.db === 'ok' ? 'PostgreSQL connected' :
+      health.db === 'memory' ? 'In-memory mode (data lost on restart)' : 'Not connected',
+      health.db === 'err' ? '<a href="https://postgresql.org/download">Install PostgreSQL</a>' : ''),
+    makeRow(health.queue === 'ok' ? 'ok' : health.queue === 'memory' ? 'warn' : 'err', 'Job Queue',
+      health.queue === 'ok' ? 'Redis + BullMQ running' :
+      health.queue === 'memory' ? 'In-memory queue (dev mode)' : 'Not running'),
+    makeRow(health.anthropic === 'ok' ? 'ok' : 'err', 'Anthropic API Key',
+      health.anthropic === 'ok' ? 'Configured' : 'Missing or invalid — tips will not process',
+      health.anthropic !== 'ok' ? '<a href="/setup">Add key in setup</a>' : ''),
+  ];
+  document.getElementById('core-checks').innerHTML = coreRows.join('');
+
+  // Tip sources
+  const sourceRows = [
+    makeRow(health.ids_enabled ? (health.ids_credentials ? 'ok' : 'warn') : 'skip', 'IDS Portal',
+      !health.ids_enabled ? 'Not configured' :
+      health.ids_credentials ? 'Polling every 60s' : 'Enabled but credentials missing',
+      !health.ids_credentials ? '<a href="/setup">Configure in setup</a>' : ''),
+    makeRow(health.ncmec_api_enabled ? (health.ncmec_api_key ? 'ok' : 'warn') : 'skip', 'NCMEC API',
+      !health.ncmec_api_enabled ? 'Not configured' :
+      health.ncmec_api_key ? 'Active' : 'Enabled but API key missing'),
+    makeRow(health.email_enabled ? (health.email_credentials ? 'ok' : 'warn') : 'skip', 'Email Inbox',
+      !health.email_enabled ? 'Not configured' :
+      health.email_credentials ? `${health.email_user ?? ''}` : 'Enabled but credentials missing'),
+    makeRow(health.stub_dir_exists ? 'ok' : 'warn', 'Stub Tips (Testing)',
+      health.stub_dir_exists ? `${health.stub_count ?? 0} stub tip(s) in test-data/ids-stubs/` : 'test-data/ids-stubs/ not found'),
+    makeRow('ok', 'VPN Portal Endpoint', '/intake/portal — accepting submissions'),
+  ];
+  document.getElementById('source-checks').innerHTML = sourceRows.join('');
+
+  // External APIs
+  const apiRows = [
+    makeRow(health.project_vic ? 'ok' : 'warn', 'Project VIC (Hash Matching)',
+      health.project_vic ? 'Configured' : 'Not configured — hash matches limited to NCMEC only',
+      !health.project_vic ? '<a href="https://projectvic.org" target="_blank">Apply at projectvic.org</a>' : ''),
+    makeRow(health.iwf ? 'ok' : 'warn', 'IWF Hash List',
+      health.iwf ? 'Configured' : 'Not configured',
+      !health.iwf ? '<a href="https://iwf.org.uk" target="_blank">Contact IWF LE liaison</a>' : ''),
+    makeRow(health.deconfliction ? 'ok' : 'warn', 'De-Confliction (RISSafe/HighWay)',
+      health.deconfliction ? 'Connected' : 'Not configured — de-confliction checks will return no results',
+      !health.deconfliction ? '<a href="https://riss.net" target="_blank">Contact regional RISS center</a>' : ''),
+    makeRow(health.interpol ? 'ok' : 'skip', 'Interpol ICSE',
+      health.interpol ? 'Configured' : 'Not configured — contact NCB liaison for international cases'),
+  ];
+  document.getElementById('api-checks').innerHTML = apiRows.join('');
+
+  // Overall status
+  const hasError = health.anthropic !== 'ok' || health.api !== 'ok';
+  const hasWarn = health.db === 'memory' || !health.ids_enabled;
+  setOverall(
+    hasError ? 'err' : hasWarn ? 'warn' : 'ok',
+    hasError ? 'Action required' : hasWarn ? 'Operational with warnings' : 'All systems operational',
+    hasError ? 'Critical configuration missing — tips will not process' :
+    hasWarn ? 'System is running but some integrations are not configured' :
+    `Last checked ${new Date().toLocaleTimeString()}`
+  );
+
+  // Fake recent log entries
+  renderLog([
+    { ts: new Date(), type: 'ok', msg: 'Health check completed' },
+    ...(stats?.tips?.total > 0 ? [{ ts: new Date(Date.now()-30000), type: 'ok', msg: `${stats.tips.total} tip(s) in system` }] : []),
+    ...(health.anthropic !== 'ok' ? [{ ts: new Date(), type: 'err', msg: 'Anthropic API key not configured — add to .env' }] : []),
+    ...(health.db === 'memory' ? [{ ts: new Date(), type: 'warn', msg: 'Using in-memory database — data will not persist across restarts' }] : []),
+  ]);
+}
+
+function renderFallback() {
+  const rows = [
+    makeRow('ok', 'API Server', 'Reachable (this page is loading)'),
+    makeRow('warn', 'Detailed status', 'Install complete — /health/detailed not yet available'),
+  ];
+  document.getElementById('core-checks').innerHTML = rows.join('');
+  document.getElementById('source-checks').innerHTML = makeRow('warn', 'Status', 'Run the server to see source status');
+  document.getElementById('api-checks').innerHTML = makeRow('warn', 'Status', 'Run the server to see API status');
+}
+
+function renderLog(entries) {
+  const box = document.getElementById('log-box');
+  box.innerHTML = entries.map(e =>
+    `<div class="log-line"><span class="log-ts">[${e.ts.toLocaleTimeString()}]</span> <span class="log-${e.type}">${e.msg}</span></div>`
+  ).join('');
+}
+
+// Auto-refresh every 30 seconds
+checkAll();
+setInterval(checkAll, 30000);
+</script>
+</body>
+</html>

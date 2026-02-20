@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyberTip — Tier 4 Admin</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: 'SF Pro Display', system-ui, sans-serif; margin: 0; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; }
+    .badge-green  { background: #14532d; color: #86efac; }
+    .badge-yellow { background: #713f12; color: #fde68a; }
+    .badge-red    { background: #7f1d1d; color: #fca5a5; }
+    .badge-blue   { background: #1e3a5f; color: #93c5fd; }
+    .badge-gray   { background: #1f2937; color: #9ca3af; }
+    .tab-active   { border-bottom: 2px solid #3b82f6; color: #60a5fa; }
+    .btn-primary  { background: #1d4ed8; color: #fff; border: none; cursor: pointer; padding: 6px 16px; border-radius: 6px; font-size: 13px; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger   { background: #7f1d1d; color: #fca5a5; border: none; cursor: pointer; padding: 6px 16px; border-radius: 6px; font-size: 13px; }
+    .btn-danger:hover { background: #991b1b; }
+    input, textarea, select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6; }
+    pre { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px; font-size: 11px; color: #94a3b8; overflow-x: auto; white-space: pre-wrap; }
+    .anim-pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.5;} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000/api'
+  : `${window.location.protocol}//${window.location.hostname}:3000/api`;
+
+const ago = (iso) => {
+  if (!iso) return '—';
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
+};
+
+// ── Cluster Scan Panel ────────────────────────────────────────────────────────
+
+function ClusterScanPanel() {
+  const [bundleStats, setBundleStats] = useState(null);
+  const [scanResult,  setScanResult]  = useState(null);
+  const [scanning,    setScanning]    = useState(false);
+  const [error,       setError]       = useState(null);
+
+  const loadBundleStats = async () => {
+    try {
+      const data = await fetch(`${API}/bundles/stats`).then(r => r.json());
+      setBundleStats(data);
+    } catch (e) {
+      setError('Could not load bundle stats: ' + e.message);
+    }
+  };
+
+  useEffect(() => { loadBundleStats(); }, []);
+
+  const runScan = async () => {
+    setScanning(true);
+    setScanResult(null);
+    setError(null);
+    try {
+      const result = await fetch(`${API}/jobs/cluster-scan`, { method: 'POST' }).then(r => r.json());
+      setScanResult(result);
+    } catch (e) {
+      setError('Scan failed: ' + e.message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold">Temporal Clustering — Tier 4.2</h2>
+        <button className="btn-primary" onClick={runScan} disabled={scanning}>
+          {scanning ? (
+            <span className="anim-pulse">⚙ Running scan...</span>
+          ) : '▶ Run Cluster Scan Now'}
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-400 leading-relaxed">
+        Detects slow-building patterns across the last 90 days that single-tip analysis misses:
+        shared IP subnets, schools, gaming platforms, geographic areas, and username patterns.
+        <strong className="text-white"> MONITOR tips are auto-escalated to STANDARD</strong> when cluster_size ≥ 3.
+        Runs automatically at 02:00 every night.
+      </p>
+
+      {/* Bundle dedup stats */}
+      {bundleStats && (
+        <div className="card p-4">
+          <div className="text-sm font-bold text-gray-300 mb-3">Bundle Deduplication Stats (Tier 3.2)</div>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-bold text-blue-300">{bundleStats.unique_bundles}</div>
+              <div className="text-xs text-gray-500">unique bundles</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-green-300">{bundleStats.total_incidents?.toLocaleString()}</div>
+              <div className="text-xs text-gray-500">total incidents deduplicated</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-yellow-300">{bundleStats.cache_size}</div>
+              <div className="text-xs text-gray-500">fingerprints cached</div>
+            </div>
+          </div>
+          {bundleStats.largest_bundle && (
+            <div className="mt-3 text-xs text-gray-500">
+              Largest bundle: <span className="text-white font-mono">{bundleStats.largest_bundle.tip_id?.slice(0,8).toUpperCase()}</span>
+              {' '}— {bundleStats.largest_bundle.count?.toLocaleString()} incidents
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Scan result */}
+      {scanResult && (
+        <div className="card p-4">
+          <div className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+            <span className="text-green-400">✓</span> Scan Complete
+            <span className="text-gray-600 font-mono text-xs">{scanResult.scan_id?.slice(0,8)}</span>
+          </div>
+          <div className="grid grid-cols-4 gap-4 text-center mb-4">
+            <div>
+              <div className="text-xl font-bold text-blue-300">{scanResult.clusters}</div>
+              <div className="text-xs text-gray-500">clusters found</div>
+            </div>
+            <div>
+              <div className="text-xl font-bold text-orange-300">{scanResult.escalations}</div>
+              <div className="text-xs text-gray-500">tips escalated</div>
+            </div>
+            <div>
+              <div className="text-xl font-bold text-gray-300">{scanResult.duration_ms}ms</div>
+              <div className="text-xs text-gray-500">duration</div>
+            </div>
+            <div>
+              <div className="text-xl font-bold text-red-300">{scanResult.errors?.length ?? 0}</div>
+              <div className="text-xs text-gray-500">errors</div>
+            </div>
+          </div>
+          {scanResult.errors?.length > 0 && (
+            <div className="text-xs text-red-400 border border-red-900 rounded p-2">
+              Errors: {scanResult.errors.join('; ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-400 border border-red-900 rounded p-3">{error}</div>
+      )}
+
+      {/* Cluster pattern legend */}
+      <div className="card p-4">
+        <div className="text-sm font-bold text-gray-300 mb-3">Patterns Detected</div>
+        <div className="space-y-2 text-xs text-gray-400">
+          {[
+            { type: 'IP Subnet /24',     desc: 'Multiple tips from same /24 subnet — may indicate shared infrastructure', threshold: '≥3 tips / 90 days' },
+            { type: 'School',            desc: 'Tips referencing same school/district — possible repeat predator targeting same venue', threshold: '≥3 tips / 90 days' },
+            { type: 'Gaming Platform',   desc: 'Same platform + similar victim age profile', threshold: '≥3 tips / 90 days' },
+            { type: 'Geographic Area',   desc: 'Same city + state across multiple tips — local predator pattern', threshold: '≥3 tips / 90 days' },
+            { type: 'Username Pattern',  desc: 'Normalized username (digits/suffixes stripped) matching across platforms', threshold: '≥3 tips / 90 days' },
+          ].map(p => (
+            <div key={p.type} className="flex items-start gap-3">
+              <span className="text-orange-400 font-bold w-36 shrink-0">{p.type}</span>
+              <span className="flex-1">{p.desc}</span>
+              <span className="text-gray-600 shrink-0">{p.threshold}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Circuit Legal Panel ───────────────────────────────────────────────────────
+
+const CIRCUITS = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th','11th','DC'];
+
+function CircuitLegalPanel() {
+  const [precedents,     setPrecedents]     = useState([]);
+  const [selectedCircuit, setSelectedCircuit] = useState('9th');
+  const [circuitData,    setCircuitData]    = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [addForm,        setAddForm]        = useState(false);
+  const [newPrec,        setNewPrec]        = useState({ circuit: '9th', case_name: '', citation: '', effect: 'now_binding', summary: '', added_by: '' });
+  const [saveStatus,     setSaveStatus]     = useState('');
+
+  const loadPrecedents = async () => {
+    try {
+      const data = await fetch(`${API}/legal/precedents`).then(r => r.json());
+      setPrecedents(data.precedents ?? []);
+    } catch {}
+  };
+
+  const loadCircuit = async (c) => {
+    // Map circuit to a representative state
+    const stateMap = { '1st': 'MA', '2nd': 'NY', '3rd': 'PA', '4th': 'VA', '5th': 'TX',
+      '6th': 'OH', '7th': 'IL', '8th': 'MN', '9th': 'CA', '10th': 'CO', '11th': 'FL', DC: 'DC' };
+    const state = stateMap[c];
+    if (!state) return;
+    setLoading(true);
+    try {
+      const data = await fetch(`${API}/legal/circuit/${state}`).then(r => r.json());
+      setCircuitData(data);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadPrecedents(); loadCircuit('9th'); }, []);
+
+  const handleCircuitChange = (c) => {
+    setSelectedCircuit(c);
+    loadCircuit(c);
+    setCircuitData(null);
+  };
+
+  const submitPrecedent = async () => {
+    if (!newPrec.case_name || !newPrec.citation || !newPrec.summary || !newPrec.added_by) {
+      setSaveStatus('All fields required');
+      return;
+    }
+    setSaveStatus('Saving...');
+    try {
+      await fetch(`${API}/legal/precedents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newPrec, date: new Date().toISOString().slice(0,10) }),
+      });
+      setSaveStatus('✓ Saved — reload to see updated log');
+      setAddForm(false);
+      await loadPrecedents();
+    } catch (e) {
+      setSaveStatus('Error: ' + e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold">Multi-Circuit Legal Guidance — Tier 4.1</h2>
+        <button className="btn-primary" onClick={() => setAddForm(!addForm)}>
+          + Record New Precedent
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-400 leading-relaxed">
+        Circuit-specific Fourth Amendment guidance for file access decisions.
+        <strong className="text-white"> Wilson v. US (9th Cir. 2020)</strong> is the binding standard in the 9th Circuit.
+        All other circuits apply Wilson conservatively until their own binding precedent emerges.
+        Record new opinions here — they are <strong className="text-green-400">persisted to the database</strong> and
+        survive server restarts. Recording a <em>now_binding</em> precedent immediately updates the
+        deterministic warrant logic for that circuit.
+      </p>
+
+      {/* Add precedent form */}
+      {addForm && (
+        <div className="card p-4 border-blue-800">
+          <div className="text-sm font-bold mb-3 text-blue-300">Record New Binding Precedent</div>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Circuit</label>
+              <select value={newPrec.circuit} onChange={e => setNewPrec({...newPrec, circuit: e.target.value})} className="w-full">
+                {CIRCUITS.map(c => <option key={c} value={c}>{c} Circuit</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Effect</label>
+              <select value={newPrec.effect} onChange={e => setNewPrec({...newPrec, effect: e.target.value})} className="w-full">
+                <option value="now_binding">Now Binding</option>
+                <option value="affirmed">Affirmed</option>
+                <option value="limited">Limited</option>
+                <option value="reversed">Reversed</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Case Name</label>
+              <input value={newPrec.case_name} onChange={e => setNewPrec({...newPrec, case_name: e.target.value})} placeholder="United States v. ..." className="w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Citation</label>
+              <input value={newPrec.citation} onChange={e => setNewPrec({...newPrec, citation: e.target.value})} placeholder="F.4th, Cir., Year" className="w-full" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-gray-500 block mb-1">Summary (one sentence — impact on file access)</label>
+              <textarea value={newPrec.summary} onChange={e => setNewPrec({...newPrec, summary: e.target.value})} rows={2} className="w-full" placeholder="Warrant required / not required when..." />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Added By (badge #)</label>
+              <input value={newPrec.added_by} onChange={e => setNewPrec({...newPrec, added_by: e.target.value})} placeholder="Badge number" className="w-full" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="btn-primary" onClick={submitPrecedent}>Save to Precedent Log</button>
+            <button className="btn-danger" onClick={() => setAddForm(false)}>Cancel</button>
+            {saveStatus && <span className="text-xs text-gray-400">{saveStatus}</span>}
+          </div>
+          <div className="text-xs text-green-400 mt-2">
+            ✓ Precedent is saved to the database and survives server restarts.
+            Setting effect to <strong>now_binding</strong> automatically updates the warrant logic for that circuit — no code change needed.
+          </div>
+        </div>
+      )}
+
+      {/* Circuit selector */}
+      <div className="flex gap-1 flex-wrap">
+        {CIRCUITS.map(c => (
+          <button key={c} onClick={() => handleCircuitChange(c)}
+            className={`px-3 py-1 rounded text-xs font-bold border ${selectedCircuit === c ? 'bg-blue-800 border-blue-600 text-white' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>
+            {c}{c === '9th' ? ' ★' : ''}
+          </button>
+        ))}
+      </div>
+
+      {/* Circuit detail */}
+      {loading && <div className="text-gray-500 text-sm">Loading...</div>}
+      {circuitData && !loading && (
+        <div className="card p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="text-lg font-bold text-white">{circuitData.circuit} Circuit</div>
+            {circuitData.circuit === '9th' ? (
+              <span className="badge-red text-xs font-bold px-2 py-0.5 rounded">BINDING WILSON PRECEDENT</span>
+            ) : (
+              <span className="badge-yellow text-xs font-bold px-2 py-0.5 rounded">NO BINDING PRECEDENT</span>
+            )}
+          </div>
+          <p className="text-sm text-gray-300 leading-relaxed mb-4">{circuitData.summary}</p>
+
+          {circuitData.precedent_history?.length > 0 ? (
+            <div>
+              <div className="text-xs text-gray-500 font-bold mb-2">PRECEDENT HISTORY</div>
+              {circuitData.precedent_history.map((p, i) => (
+                <div key={i} className="border-l-2 border-blue-600 pl-3 mb-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-bold text-white">{p.case_name}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${p.effect === 'now_binding' ? 'badge-red' : 'badge-gray'}`}>{p.effect?.replace('_',' ')}</span>
+                    <span className="text-xs text-gray-500">{p.date}</span>
+                  </div>
+                  <div className="text-xs text-blue-400 font-mono mb-1">{p.citation}</div>
+                  <div className="text-xs text-gray-300">{p.summary}</div>
+                  {p.added_by && p.added_by !== 'SYSTEM' && (
+                    <div className="text-xs text-gray-600 mt-1">Added by: {p.added_by}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600">No binding precedent recorded for this circuit. Wilson applied conservatively.</div>
+          )}
+        </div>
+      )}
+
+      {/* Full precedent log */}
+      <div className="card p-4">
+        <div className="text-sm font-bold text-gray-300 mb-3">All Circuit Precedent Log ({precedents.length} entries)</div>
+        {precedents.length === 0 ? (
+          <div className="text-xs text-gray-600">No entries. Database as of {new Date().toLocaleDateString()}.</div>
+        ) : (
+          <div className="space-y-2">
+            {precedents.map((p, i) => (
+              <div key={i} className="flex items-start gap-3 text-xs py-2 border-b border-gray-700">
+                <span className="badge-blue text-xs px-1.5 py-0.5 rounded font-bold shrink-0">{p.circuit}</span>
+                <div className="flex-1">
+                  <span className="font-medium text-white">{p.case_name}</span>
+                  <span className="text-gray-500 ml-2 font-mono">{p.citation}</span>
+                </div>
+                <span className={`shrink-0 text-xs ${p.effect === 'now_binding' ? 'text-red-400' : 'text-gray-500'}`}>{p.effect?.replace('_',' ')}</span>
+                <span className="text-gray-600 shrink-0">{p.date}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── MLAT Overview Panel ───────────────────────────────────────────────────────
+
+function MLATOverviewPanel() {
+  const [internationalTips, setInternationalTips] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadInternationalTips = async () => {
+    try {
+      const queue = await fetch(`${API}/queue`).then(r => r.json());
+      const all   = Object.values(queue).flat();
+      const intl  = all.filter(t => {
+        const countries = t.jurisdiction_of_tip?.countries_involved ?? [];
+        return countries.some(c => c !== 'US') || t.extracted?.subject_country;
+      });
+      setInternationalTips(intl);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadInternationalTips(); }, []);
+
+  const TREATY_STATUS = {
+    CA: { name: 'Canada',       mechanism: 'CLOUD Act',   timeline: '2–4 wks',  color: 'text-green-400' },
+    GB: { name: 'UK',           mechanism: 'CLOUD Act',   timeline: '2–6 wks',  color: 'text-green-400' },
+    AU: { name: 'Australia',    mechanism: 'CLOUD Act',   timeline: '2–4 wks',  color: 'text-green-400' },
+    DE: { name: 'Germany',      mechanism: 'MLAT',        timeline: '6–12 mo',  color: 'text-yellow-400' },
+    FR: { name: 'France',       mechanism: 'MLAT',        timeline: '6–12 mo',  color: 'text-yellow-400' },
+    NL: { name: 'Netherlands',  mechanism: 'MLAT',        timeline: '4–8 mo',   color: 'text-yellow-400' },
+    PH: { name: 'Philippines',  mechanism: 'MLAT',        timeline: '6–18 mo',  color: 'text-orange-400' },
+    IN: { name: 'India',        mechanism: 'MLAT',        timeline: '12–24 mo', color: 'text-red-400' },
+    BR: { name: 'Brazil',       mechanism: 'MLAT',        timeline: '6–18 mo',  color: 'text-orange-400' },
+    MX: { name: 'Mexico',       mechanism: 'MLAT',        timeline: '6–12 mo',  color: 'text-yellow-400' },
+    NG: { name: 'Nigeria',      mechanism: 'Letters Rogatory', timeline: '12–36 mo', color: 'text-red-400' },
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold">MLAT Workflow Overview — Tier 4.3</h2>
+
+      <p className="text-sm text-gray-400 leading-relaxed">
+        84% of 2024 NCMEC tips had subjects outside the US. MLAT requests routed through
+        <strong className="text-white"> DOJ OIA (oiacriminal@usdoj.gov)</strong> are required for most cross-border evidence.
+        CLOUD Act bilateral agreements (CA/GB/AU) are significantly faster — use them first.
+        Open a tip and go to its <strong className="text-blue-300">MLAT tab</strong> to generate a pre-populated request draft.
+      </p>
+
+      {/* Treaty quick-reference table */}
+      <div className="card p-4">
+        <div className="text-sm font-bold text-gray-300 mb-3">Treaty Quick Reference — Top ICAC Countries</div>
+        <div className="overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                <th className="py-2 text-left">Country</th>
+                <th className="py-2 text-left">Mechanism</th>
+                <th className="py-2 text-left">Est. Timeline</th>
+                <th className="py-2 text-left">Budapest</th>
+                <th className="py-2 text-left">DOJ OIA Desk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { cc: 'CA', bud: true,  desk: 'Canada' },
+                { cc: 'GB', bud: true,  desk: 'UK/Europe' },
+                { cc: 'AU', bud: true,  desk: 'Asia-Pacific' },
+                { cc: 'DE', bud: true,  desk: 'EU' },
+                { cc: 'FR', bud: true,  desk: 'EU' },
+                { cc: 'NL', bud: true,  desk: 'EU' },
+                { cc: 'PH', bud: false, desk: 'Asia-Pacific' },
+                { cc: 'IN', bud: false, desk: 'South Asia' },
+                { cc: 'BR', bud: false, desk: 'Latin America' },
+                { cc: 'MX', bud: false, desk: 'Latin America' },
+                { cc: 'NG', bud: false, desk: 'Africa' },
+              ].map(row => {
+                const t = TREATY_STATUS[row.cc];
+                if (!t) return null;
+                return (
+                  <tr key={row.cc} style={{ borderBottom: '1px solid #1e293b' }}>
+                    <td className="py-2 font-bold">{row.cc} — {t.name}</td>
+                    <td className={`py-2 font-bold ${t.color}`}>{t.mechanism}</td>
+                    <td className={`py-2 ${t.color}`}>{t.timeline}</td>
+                    <td className="py-2">{row.bud ? '✓' : '—'}</td>
+                    <td className="py-2 text-gray-500">{row.desk}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="text-xs text-gray-600 mt-2">
+          Always send Budapest Article 16 preservation request <em>before</em> the MLAT to prevent data deletion during the months-long MLAT process.
+        </div>
+      </div>
+
+      {/* International tips in queue */}
+      <div className="card p-4">
+        <div className="text-sm font-bold text-gray-300 mb-3">
+          International Tips in Queue ({loading ? '…' : internationalTips.length})
+        </div>
+        {loading && <div className="text-xs text-gray-500">Loading...</div>}
+        {!loading && internationalTips.length === 0 && (
+          <div className="text-xs text-gray-600">No international tips currently in queue.</div>
+        )}
+        {internationalTips.slice(0, 20).map(tip => {
+          const countries = (tip.jurisdiction_of_tip?.countries_involved ?? []).filter(c => c !== 'US');
+          return (
+            <div key={tip.tip_id} className="flex items-center justify-between py-2 border-b border-gray-700 text-sm">
+              <div>
+                <span className="font-mono text-gray-300">{tip.ncmec_tip_number ?? tip.tip_id.slice(0,8).toUpperCase()}</span>
+                <span className="text-gray-500 ml-3">{countries.join(', ')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                  tip.priority?.tier === 'IMMEDIATE' ? 'badge-red' :
+                  tip.priority?.tier === 'URGENT'    ? 'badge-yellow' : 'badge-gray'
+                }`}>{tip.priority?.tier ?? 'pending'}</span>
+                <span className="text-gray-600 text-xs">{countries.map(c => TREATY_STATUS[c]?.mechanism ?? 'MLAT?').join(', ')}</span>
+              </div>
+            </div>
+          );
+        })}
+        {internationalTips.length > 20 && (
+          <div className="text-xs text-gray-600 mt-2">Showing 20 of {internationalTips.length} — open full queue to see all.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [tab, setTab] = useState('clusters');
+
+  const tabs = [
+    { id: 'clusters', label: '🔗 Cluster Scan' },
+    { id: 'circuit',  label: '⚖ Circuit Legal' },
+    { id: 'mlat',     label: '🌐 MLAT Workflow' },
+  ];
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{ background: '#1e293b', borderBottom: '1px solid #334155', padding: '12px 24px' }}
+           className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span style={{ fontSize: 22 }}>🛡</span>
+          <div>
+            <div className="font-bold">CyberTip Triage — Tier 4 Admin</div>
+            <div className="text-xs text-gray-500">Clustering · Multi-Circuit Legal · MLAT Workflow</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <a href="/dashboard" style={{ color: '#60a5fa', fontSize: 13 }}>← Main Dashboard</a>
+          <a href="/mobile"    style={{ color: '#60a5fa', fontSize: 13 }}>Mobile →</a>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <div style={{ background: '#1e293b', borderBottom: '1px solid #334155' }} className="flex">
+        {tabs.map(t => (
+          <button key={t.id}
+            className={`px-6 py-3 text-sm font-medium ${tab === t.id ? 'tab-active' : 'text-gray-400 hover:text-gray-200'}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px', maxWidth: 900, width: '100%', margin: '0 auto' }}>
+        {tab === 'clusters' && <ClusterScanPanel />}
+        {tab === 'circuit'  && <CircuitLegalPanel />}
+        {tab === 'mlat'     && <MLATOverviewPanel />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
