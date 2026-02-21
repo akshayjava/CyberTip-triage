@@ -28,6 +28,8 @@
 
 import { runTool, type ToolResult } from "../types.js";
 import { createHash } from "crypto";
+import { readFile } from "fs/promises";
+import { request as httpsRequest } from "https";
 
 export interface WatchlistResult {
   matched: boolean;
@@ -141,6 +143,9 @@ function photoDNAKey(hash: string): string {
 }
 
 // Project VIC — mTLS REST API
+let certPromise: Promise<Buffer> | null = null;
+let keyPromise: Promise<Buffer> | null = null;
+
 async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
   const endpoint = process.env["PROJECT_VIC_ENDPOINT"];
   const certPath  = process.env["PROJECT_VIC_CERT"];
@@ -153,11 +158,11 @@ async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
     );
   }
 
-  // mTLS requires Node's https module with client certs
-  const { readFileSync } = await import("fs");
-  const { request: httpsRequest } = await import("https");
-  const cert = readFileSync(certPath);
-  const key  = readFileSync(keyPath);
+  // Load certificates into cache if not already present
+  if (!certPromise) certPromise = readFile(certPath);
+  if (!keyPromise)  keyPromise  = readFile(keyPath);
+
+  const [cert, key] = await Promise.all([certPromise, keyPromise]);
   const url  = new URL(`/api/v2/hash/lookup`, endpoint);
 
   const responseBody: string = await new Promise((resolve, reject) => {
