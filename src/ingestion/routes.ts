@@ -11,6 +11,7 @@ import type { RequestHandler, Request, Response } from "express";
 import { createHmac, timingSafeEqual } from "crypto";
 import { enqueueTip } from "./queue.js";
 import type { TipSource } from "../models/index.js";
+import { publicIntakeLimiter } from "../middleware/rate-limit.js";
 
 // ── Signature verification middleware ─────────────────────────────────────────
 
@@ -207,6 +208,7 @@ export function mountIngestionRoutes(app: Application): void {
   // Public web form — no auth, rate-limited separately
   app.post(
     "/intake/public",
+    publicIntakeLimiter,
     (req, res) => void handlePublicSubmission(req, res)
   );
 

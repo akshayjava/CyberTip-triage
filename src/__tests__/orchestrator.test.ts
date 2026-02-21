@@ -25,16 +25,16 @@ const mockClassifier = vi.fn();
 const mockLinker = vi.fn();
 const mockPriority = vi.fn();
 
-vi.mock("../../agents/intake.js", () => ({ runIntakeAgent: mockIntake }));
-vi.mock("../../agents/legal_gate.js", () => ({ runLegalGateAgent: mockLegalGate }));
-vi.mock("../../agents/extraction.js", () => ({ runExtractionAgent: mockExtraction }));
-vi.mock("../../agents/hash_osint.js", () => ({ runHashOsintAgent: mockHashOsint }));
-vi.mock("../../agents/classifier.js", () => ({ runClassifierAgent: mockClassifier }));
-vi.mock("../../agents/linker.js", () => ({ runLinkerAgent: mockLinker }));
-vi.mock("../../agents/priority.js", () => ({ runPriorityAgent: mockPriority }));
+vi.mock("../agents/intake.js", () => ({ runIntakeAgent: mockIntake }));
+vi.mock("../agents/legal_gate.js", () => ({ runLegalGateAgent: mockLegalGate }));
+vi.mock("../agents/extraction.js", () => ({ runExtractionAgent: mockExtraction }));
+vi.mock("../agents/hash_osint.js", () => ({ runHashOsintAgent: mockHashOsint }));
+vi.mock("../agents/classifier.js", () => ({ runClassifierAgent: mockClassifier }));
+vi.mock("../agents/linker.js", () => ({ runLinkerAgent: mockLinker }));
+vi.mock("../agents/priority.js", () => ({ runPriorityAgent: mockPriority }));
 
-const { processTip, onPipelineEvent } = await import("../../orchestrator.js");
-import { clearInMemoryLog, getInMemoryLog } from "../../compliance/audit.js";
+const { processTip, onPipelineEvent } = await import("../orchestrator.js");
+import { clearInMemoryLog, getInMemoryLog } from "../compliance/audit.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -243,7 +243,7 @@ describe("Orchestrator Pipeline Wiring", () => {
         esp_viewed_missing: false,
         publicly_available: false,
         warrant_required: true,
-        warrant_status: "pending_application" as const,
+        warrant_status: "applied" as const,
         file_access_blocked: true,
         ncmec_hash_match: false,
         project_vic_match: false,

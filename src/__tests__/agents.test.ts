@@ -20,13 +20,13 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 // Import agents after mock
-const { runIntakeAgent } = await import("../../agents/intake.js");
-const { runLegalGateAgent } = await import("../../agents/legal_gate.js");
-const { runPriorityAgent } = await import("../../agents/priority.js");
-const { runClassifierAgent } = await import("../../agents/classifier.js");
+const { runIntakeAgent } = await import("../agents/intake.js");
+const { runLegalGateAgent } = await import("../agents/legal_gate.js");
+const { runPriorityAgent } = await import("../agents/priority.js");
+const { runClassifierAgent } = await import("../agents/classifier.js");
 
-import { clearInMemoryLog } from "../../compliance/audit.js";
-import type { CyberTip, TipFile } from "../../models/index.js";
+import { clearInMemoryLog } from "../compliance/audit.js";
+import type { CyberTip, TipFile } from "../models/index.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -218,7 +218,7 @@ Notes: None`;
       received_at: new Date().toISOString(),
     });
 
-    const log = await import("../../compliance/audit.js").then(m => m.getAuditTrail(result.tip_id));
+    const log = await import("../compliance/audit.js").then(m => m.getAuditTrail(result.tip_id));
     expect(log.some((e: any) => e.agent === "intake" && e.status === "success")).toBe(true);
   });
 });
@@ -263,7 +263,7 @@ describe("Legal Gate Agent — Wilson Compliance", () => {
       esp_viewed: false,
       esp_viewed_missing: false,
       warrant_required: true,
-      warrant_status: "pending_application",
+      warrant_status: "applied",
       file_access_blocked: true,
     });
     const tip = makeTip({ files: [blockedFile] });

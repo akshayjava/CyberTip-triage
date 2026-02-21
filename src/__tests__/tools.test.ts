@@ -9,18 +9,18 @@ import {
   getDaysUntilExpiry,
   isPreservationUrgent,
   ESP_RETENTION_WINDOWS,
-} from "../../tools/preservation/esp_retention.js";
+} from "../tools/preservation/esp_retention.js";
 import {
   detectInjectionAttempts,
   wrapTipContent,
   wrapTipMetadata,
-} from "../../compliance/prompt-guards.js";
+} from "../compliance/prompt-guards.js";
 import {
   appendAuditEntry,
   getAuditTrail,
   getInMemoryLog,
   clearInMemoryLog,
-} from "../../compliance/audit.js";
+} from "../compliance/audit.js";
 
 // ── ESP Retention ─────────────────────────────────────────────────────────────
 

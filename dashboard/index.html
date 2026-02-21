@@ -295,14 +295,6 @@
                 file.warrant_status === 'denied' ? 'text-red-400' :
                   file.warrant_status === 'applied' ? 'text-yellow-400' : 'text-gray-400'
                 }`}>{file.warrant_status}</span>
-              {file.warrant_status === 'pending_application' && (
-                <button
-                  onClick={() => onWarrantUpdate(file.file_id, 'applied')}
-                  className="warrant-btn bg-blue-800 hover:bg-blue-700 text-blue-200 px-2 py-0.5 rounded text-xs"
-                >
-                  Mark Applied
-                </button>
-              )}
               {file.warrant_status === 'applied' && (
                 <>
                   <button
