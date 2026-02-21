@@ -36,6 +36,8 @@ export interface ListTipsOptions {
   offset?: number;
   /** Only return tips with victim_crisis_alert=true */
   crisis_only?: boolean;
+  /** Return tips received at or after this ISO timestamp */
+  since?: string;
 }
 
 export interface ListTipsResult {
@@ -263,6 +265,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
           t.classification?.sextortion_victim_in_crisis === true
       );
     }
+    if (opts.since) {
+      const sinceTime = new Date(opts.since).getTime();
+      tips = tips.filter((t) => new Date(t.received_at).getTime() >= sinceTime);
+    }
 
     // Sort: tier order, then score descending
     const tierOrder: Record<string, number> = {
@@ -298,6 +304,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     conditions.push(
       `(priority->>'victim_crisis_alert' = 'true' OR classification->>'sextortion_victim_in_crisis' = 'true')`
     );
+  }
+  if (opts.since) {
+    conditions.push(`received_at >= $${paramIdx++}`);
+    params.push(opts.since);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

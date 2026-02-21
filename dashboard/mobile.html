@@ -246,10 +246,17 @@ function TipDetailSheet({ tip, onClose, onRefresh }) {
   const assignSelf = async () => {
     setActionLoading('assign');
     try {
+      let badge = localStorage.getItem("officer_badge");
+      if (!badge) {
+        badge = prompt("Please enter your badge number:");
+        if (!badge) { setActionLoading(''); return; }
+        localStorage.setItem("officer_badge", badge);
+      }
+
       await fetch(`${API}/tips/${tip.tip_id}/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ investigator_id: 'on_call', investigator_name: 'On-Call Investigator' }),
+        body: JSON.stringify({ investigator_id: badge, investigator_name: `Officer ${badge}` }),
       });
       onRefresh();
     } finally { setActionLoading(''); }

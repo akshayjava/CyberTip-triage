@@ -26,6 +26,8 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { enqueueTip } from "./queue.js";
 import type { IngestionConfig } from "./config.js";
+import { parseNcmecPdfText, validateNcmecPdf } from "../parsers/ncmec_pdf.js";
+import { alertSupervisor } from "../tools/alerts/alert_tools.js";
 
 // ── Processed-tip tracking (in-memory; backed by DB on postgres builds) ────────
 
@@ -446,6 +448,24 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
       for (const tipRef of tipRefs) {
         try {
           const pdfText = await downloadAndExtractTip(tipRef, session, config.ids_portal.download_dir);
+
+          // Validate PDF structure before enqueueing
+          const parsed = parseNcmecPdfText(pdfText);
+          const validation = validateNcmecPdf(parsed);
+
+          if (!validation.valid) {
+            const msg = `PDF validation failed: ${validation.errors.join("; ")}`;
+            console.error(`[IDS] Tip ${tipRef.tip_id}: ${msg}`);
+            // Alert supervisor but proceed with enqueue (best effort)
+            await alertSupervisor(
+              tipRef.tip_id,
+              "PARSER_WARNING",
+              50,
+              "Check tip content integrity and NCMEC PDF format.",
+              msg
+            );
+          }
+
           processedTipIds.add(tipRef.tip_id);
 
           await enqueueTip(

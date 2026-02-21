@@ -31,6 +31,7 @@ import {
 import { appendAuditEntry } from "../compliance/audit.js";
 import type { CyberTip } from "../models/index.js";
 import { generateMLATRequest, tipNeedsMLAT } from "../tools/legal/mlat_generator.js";
+import { saveMLATRequest, listMLATRequests } from "../db/mlat.js";
 import { circuitLegalSummary, getCircuitForState, PRECEDENT_LOG } from "../compliance/circuit_guide.js";
 import { runClusterScan } from "../jobs/cluster_scan.js";
 
@@ -222,7 +223,20 @@ async function handleGetMLAT(req: Request, res: Response): Promise<void> {
   }
 
   const requests = generateMLATRequest(tip);
+
+  // Persist generated requests so they are tracked in admin/dashboard
+  for (const r of requests) {
+    await saveMLATRequest(r);
+  }
+
   res.json({ needs_mlat: true, requests });
+}
+
+// GET /api/mlat/requests
+async function handleListMLATRequests(req: Request, res: Response): Promise<void> {
+  const limit = parseInt((req.query["limit"] as string) ?? "100", 10);
+  const requests = await listMLATRequests(limit);
+  res.json(requests);
 }
 
 // GET /api/legal/circuit/:state
@@ -365,6 +379,7 @@ export function mountApiRoutes(app: Application): void {
   app.get("/api/bundles/stats", wrapAsync(handleBundleStats));
   app.post("/api/jobs/cluster-scan", wrapAsync(handleTriggerClusterScan));
   app.get("/api/tips/:id/mlat", wrapAsync(handleGetMLAT));
+  app.get("/api/mlat/requests", wrapAsync(handleListMLATRequests));
   app.get("/api/llm/config", wrapAsync(handleGetLLMConfig));
   app.get("/api/legal/circuit/:state", wrapAsync(handleCircuitGuidance));
   app.get("/api/legal/precedents", wrapAsync(handlePrecedentLog));
