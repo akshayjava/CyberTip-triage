@@ -11,20 +11,69 @@ import type { Reporter } from "../models/index.js";
 
 // ── Lightweight XML value extractor (no external dep needed for known schema) ─
 
+/**
+ * Helper to handle XML edge cases like CDATA and comments by using placeholders
+ * before applying regex matching. This prevents brittleness when tags appear
+ * inside comments or CDATA.
+ */
+function withPlaceholders<T>(
+  xml: string,
+  fn: (safeXml: string, restore: (text: string, stripCdata?: boolean) => string) => T
+): T {
+  const cdatas: string[] = [];
+  const comments: string[] = [];
+
+  const safeXml = xml
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, (match) => {
+      cdatas.push(match);
+      return `__NCMEC_XML_CDATA_${cdatas.length - 1}__`;
+    })
+    .replace(/<!--[\s\S]*?-->/g, (match) => {
+      comments.push(match);
+      return `__NCMEC_XML_COMMENT_${comments.length - 1}__`;
+    });
+
+  const restore = (text: string, stripCdata = true) => {
+    return text
+      .replace(/__NCMEC_XML_CDATA_(\d+)__/g, (_, id) => {
+        const full = cdatas[parseInt(id, 10)];
+        return stripCdata ? full.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1") : full;
+      })
+      .replace(/__NCMEC_XML_COMMENT_(\d+)__/g, (_, id) => {
+        return stripCdata ? "" : comments[parseInt(id, 10)];
+      });
+  };
+
+  return fn(safeXml, restore);
+}
+
 function xmlText(xml: string, tag: string): string | undefined {
-  const pattern = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-  const m = pattern.exec(xml);
-  return m?.[1]?.trim() || undefined;
+  return withPlaceholders(xml, (safeXml, restore) => {
+    const pattern = new RegExp(`<${tag}(?![a-zA-Z0-9])([^>]*)>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const m = pattern.exec(safeXml);
+    return m ? restore(m[2]).trim() || undefined : undefined;
+  });
 }
 
 function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
-  const pattern = new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, "i");
-  return pattern.exec(xml)?.[1];
+  return withPlaceholders(xml, (safeXml, restore) => {
+    const pattern = new RegExp(
+      `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}="([^"]*)"`,
+      "i"
+    );
+    const m = pattern.exec(safeXml);
+    return m ? restore(m[1]).trim() || undefined : undefined;
+  });
 }
 
 function xmlAll(xml: string, tag: string): string[] {
-  const pattern = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
-  return [...xml.matchAll(pattern)].map((m) => m[0]);
+  return withPlaceholders(xml, (safeXml, restore) => {
+    const pattern = new RegExp(
+      `<${tag}(?![a-zA-Z0-9])[^>]*>[\\s\\S]*?<\\/${tag}>`,
+      "gi"
+    );
+    return [...safeXml.matchAll(pattern)].map((m) => restore(m[0], false));
+  });
 }
 
 function parseXmlBoolean(val: string | undefined): { value: boolean; found: boolean } {
