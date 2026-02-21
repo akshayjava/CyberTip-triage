@@ -28,6 +28,8 @@
 
 import { runTool, type ToolResult } from "../types.js";
 import { createHash } from "crypto";
+import { readFileSync } from "fs";
+import { request as httpsRequest } from "https";
 
 export interface WatchlistResult {
   matched: boolean;
@@ -154,8 +156,6 @@ async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
   }
 
   // mTLS requires Node's https module with client certs
-  const { readFileSync } = await import("fs");
-  const { request: httpsRequest } = await import("https");
   const cert = readFileSync(certPath);
   const key  = readFileSync(keyPath);
   const url  = new URL(`/api/v2/hash/lookup`, endpoint);

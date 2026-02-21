@@ -17,7 +17,7 @@
  */
 
 import { execSync, spawnSync } from "child_process";
-import { existsSync, mkdirSync, statSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, statSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 import type { DemoScript, VideoConfig } from "./types.js";
 
@@ -135,7 +135,6 @@ export async function assembleVideo(
   if (!config.keep_intermediates) {
     for (const f of []) {
       try {
-        const { unlinkSync } = await import("fs");
         if (existsSync(f)) unlinkSync(f);
       } catch { /* non-fatal */ }
     }
