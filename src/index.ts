@@ -24,6 +24,7 @@ import { loadConfig } from "./ingestion/config.js";
 import { warnIfAlertsUnconfigured } from "./tools/alerts/alert_tools.js";
 import { checkHashDBCredentials } from "./tools/hash/check_watchlists.js";
 import { startClusterScheduler, stopClusterScheduler } from "./jobs/cluster_scan.js";
+import { startDigestScheduler } from "./jobs/nightly_digest.js";
 import { hydrateFromDB } from "./compliance/circuit_guide.js";
 import { validateLLMConfig, getLLMConfigSummary } from "./llm/index.js";
 
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
   await startQueueWorkers();
   warnIfAlertsUnconfigured();
   startClusterScheduler(); // Tier 4.2: nightly pattern clustering
+  startDigestScheduler();  // P2: nightly digest email
 
   // Graceful shutdown
   process.on("SIGTERM", () => {
