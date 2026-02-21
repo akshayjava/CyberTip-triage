@@ -146,7 +146,7 @@ describe("Wilson Rule — computeFileAccessBlocked", () => {
         esp_viewed: false,
         esp_viewed_missing: false,
         publicly_available: false,
-        warrant_status: "pending_application",
+        warrant_status: "applied",
       })
     ).toBe(true);
   });
@@ -202,8 +202,8 @@ describe("LegalStatus — mixed file scenarios", () => {
 
   it("TEST MIX-2: All files not viewed → all blocked, warrants required for all", () => {
     const files: TipFile[] = [
-      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "pending_application" }),
-      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "pending_application" }),
+      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "applied" }),
+      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "applied" }),
     ];
 
     const status = buildLegalStatus(files);
@@ -214,7 +214,7 @@ describe("LegalStatus — mixed file scenarios", () => {
 
   it("TEST MIX-3: Some viewed, some not → mixed access", () => {
     const fileA = makeFile({ esp_viewed: true, warrant_required: false, file_access_blocked: false, warrant_status: "not_needed" });
-    const fileB = makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "pending_application" });
+    const fileB = makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "applied" });
 
     const status = buildLegalStatus([fileA, fileB]);
     expect(status.any_files_accessible).toBe(true);
@@ -330,7 +330,7 @@ describe("Prompt injection resilience — Wilson compliance cannot be bypassed b
 describe("Legal note — content and clarity", () => {
   it("Legal note mentions circuit for 9th Circuit jurisdiction", () => {
     const files: TipFile[] = [
-      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "pending_application" }),
+      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "applied" }),
     ];
     const status = buildLegalStatus(files, "CA"); // California = 9th Circuit
     expect(status.legal_note).toContain("9th Circuit");
@@ -339,7 +339,7 @@ describe("Legal note — content and clarity", () => {
 
   it("Legal note for non-9th-Circuit includes consult attorney guidance", () => {
     const files: TipFile[] = [
-      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "pending_application" }),
+      makeFile({ esp_viewed: false, warrant_required: true, file_access_blocked: true, warrant_status: "applied" }),
     ];
     const status = buildLegalStatus(files, "NY"); // New York = 2nd Circuit
     expect(status.legal_note).toMatch(/US Attorney|consult/i);
@@ -351,7 +351,7 @@ describe("Legal note — content and clarity", () => {
         esp_viewed: false,
         warrant_required: true,
         file_access_blocked: true,
-        warrant_status: "pending_application",
+        warrant_status: "applied",
         ncmec_hash_match: true,
       }),
     ];

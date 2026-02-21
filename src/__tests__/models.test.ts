@@ -24,7 +24,7 @@ describe("TipFileSchema", () => {
     esp_viewed_missing: false,
     publicly_available: false,
     warrant_required: true,
-    warrant_status: "pending_application",
+    warrant_status: "applied",
     file_access_blocked: true,
     ncmec_hash_match: false,
     project_vic_match: false,

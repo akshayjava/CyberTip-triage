@@ -13,7 +13,7 @@ import {
   getApplicableStatutes,
   REPORTING_OBLIGATIONS,
   INTERNATIONAL_FRAMEWORKS,
-} from "../../compliance/statutes.js";
+} from "../compliance/statutes.js";
 
 // ── Statute completeness ──────────────────────────────────────────────────────
 

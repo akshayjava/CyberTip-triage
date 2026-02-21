@@ -181,7 +181,11 @@ function extractFileBlocks(sectionA: string): string[] {
 
   for (const pattern of splitPatterns) {
     const parts = sectionA.split(pattern);
-    if (parts.length > 1) return parts.filter((p) => p.trim().length > 20);
+    if (parts.length > 1) {
+      // First part is usually the section A header/preamble (ESP info, subject info)
+      // Discard it if we successfully split by file markers
+      return parts.slice(1).filter((p) => p.trim().length > 20);
+    }
   }
 
   // Single file — return entire section A as one block
@@ -210,9 +214,9 @@ export function parseNcmecPdfText(text: string): NcmecPdfParsed {
 
   const espName = extractField(
     a,
-    /(?:Reporting\s+)?(?:ESP|Electronic\s+Service\s+Provider)[:\s]+(.+)/i,
-    /Report(?:ed|ing)\s+Company[:\s]+(.+)/i,
-    /Submitted\s+[Bb]y[:\s]+(.+)/i
+    /(?:^|\n)(?:Reporting\s+)?(?:ESP|Electronic\s+Service\s+Provider)[:\s]+(.+)/i,
+    /(?:^|\n)Report(?:ed|ing)\s+Company[:\s]+(.+)/i,
+    /(?:^|\n)Submitted\s+[Bb]y[:\s]+(.+)/i
   );
 
   // File blocks
@@ -294,8 +298,8 @@ export function ncmecFilesToTipFiles(files: NcmecFileMeta[]): TipFile[] {
     publicly_available: f.publicly_available,
     // Conservative defaults — Legal Gate will compute final values
     warrant_required: !f.esp_viewed || f.esp_viewed_missing,
-    warrant_status: "pending_application" as const,
-    file_access_blocked: true, // Always start blocked; Legal Gate unlocks
+    warrant_status: "applied" as const,
+    file_access_blocked: !f.esp_viewed || f.esp_viewed_missing,
     // Hash match results — populated later by Hash & OSINT Agent
     ncmec_hash_match: false,
     project_vic_match: false,

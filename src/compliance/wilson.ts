@@ -11,6 +11,7 @@
  */
 
 import type { TipFile, LegalStatus, WarrantStatus } from "../models/index.js";
+import { requiresWarrantByCircuit, type FederalCircuit } from "./circuit_guide.js";
 
 // ── Core warrant decision ─────────────────────────────────────────────────────
 
@@ -20,10 +21,28 @@ import type { TipFile, LegalStatus, WarrantStatus } from "../models/index.js";
  * Conservative rule: if esp_viewed flag is absent or ambiguous, treat as false.
  * A false positive (block when not needed) causes delay.
  * A false negative (open when blocked) collapses a prosecution.
+ *
+ * TIER 4.1 UPDATE: Accepts optional circuit parameter. If provided, uses
+ * circuit-specific logic from circuit_guide.ts.
  */
 export function computeWarrantRequired(
-  file: Pick<TipFile, "esp_viewed" | "esp_viewed_missing" | "publicly_available">
+  file: Pick<TipFile, "esp_viewed" | "esp_viewed_missing" | "publicly_available">,
+  circuit?: FederalCircuit | string | null
 ): boolean {
+  // If circuit info is available, delegate to Tier 4.1 logic
+  if (circuit && typeof circuit === "string" && /^\d+(st|nd|rd|th)|DC$/.test(circuit)) {
+    // Basic validation to match FederalCircuit type (simplified)
+    const result = requiresWarrantByCircuit({
+      circuit: circuit as FederalCircuit,
+      espViewed: file.esp_viewed,
+      espViewedMissing: file.esp_viewed_missing,
+      publiclyAvailable: file.publicly_available,
+    });
+    return result.required;
+  }
+
+  // Fallback: Conservative default logic (Pre-Tier 4.1)
+
   // If ESP viewed the file, private search occurred — no warrant needed
   if (file.esp_viewed === true && !file.esp_viewed_missing) {
     return false;
@@ -50,9 +69,10 @@ export function computeFileAccessBlocked(
   file: Pick<
     TipFile,
     "esp_viewed" | "esp_viewed_missing" | "publicly_available" | "warrant_status"
-  >
+  >,
+  circuit?: FederalCircuit | string | null
 ): boolean {
-  const warrantRequired = computeWarrantRequired(file);
+  const warrantRequired = computeWarrantRequired(file, circuit);
 
   if (!warrantRequired) return false;
 
@@ -143,9 +163,6 @@ export function buildLegalNote(
 
   const accessible = files.filter((f) => !f.file_access_blocked);
   const blocked = files.filter((f) => f.file_access_blocked);
-  const pendingWarrant = blocked.filter(
-    (f) => f.warrant_status === "pending_application"
-  );
   const appliedWarrant = blocked.filter((f) => f.warrant_status === "applied");
   const deniedWarrant = blocked.filter((f) => f.warrant_status === "denied");
 
@@ -166,17 +183,10 @@ export function buildLegalNote(
     );
   }
 
-  if (pendingWarrant.length > 0) {
-    parts.push(
-      `${pendingWarrant.length} file(s) have no warrant application yet. ` +
-        `Hash matches alone constitute probable cause — you may apply immediately.`
-    );
-  }
-
   if (appliedWarrant.length > 0) {
     parts.push(
-      `${appliedWarrant.length} file(s) have a pending warrant application. ` +
-        `Files will unlock automatically when you record the granted warrant number.`
+      `${appliedWarrant.length} file(s) require a warrant (application pending). ` +
+        `Hash matches constitute probable cause. Files will unlock automatically when you record the granted warrant number.`
     );
   }
 

@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
-import { mountApiRoutes } from "../../api/routes.js";
-import { mountSetupRoutes } from "../../api/setup_routes.js";
+import { mountApiRoutes } from "../api/routes.js";
+import { mountSetupRoutes } from "../api/setup_routes.js";
 
 // ── Test app setup ────────────────────────────────────────────────────────────
 

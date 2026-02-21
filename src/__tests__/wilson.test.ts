@@ -108,7 +108,7 @@ describe("computeFileAccessBlocked", () => {
         esp_viewed: false,
         esp_viewed_missing: false,
         publicly_available: false,
-        warrant_status: "pending_application",
+        warrant_status: "applied",
       })
     ).toBe(true);
   });
@@ -159,7 +159,7 @@ describe("assertFileAccessible", () => {
     const file = makeFile({
       file_access_blocked: true,
       warrant_required: true,
-      warrant_status: "pending_application",
+      warrant_status: "applied",
     });
     expect(() => assertFileAccessible(file)).toThrow(WilsonBlockedError);
   });
@@ -169,7 +169,7 @@ describe("assertFileAccessible", () => {
       file_id: "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
       file_access_blocked: true,
       warrant_required: true,
-      warrant_status: "pending_application",
+      warrant_status: "applied",
     });
     try {
       assertFileAccessible(file);
@@ -219,7 +219,7 @@ describe("buildLegalNote", () => {
         esp_viewed: false,
         file_access_blocked: true,
         warrant_required: true,
-        warrant_status: "pending_application",
+        warrant_status: "applied",
       }),
     ];
     const note = buildLegalNote(files, "CA");
@@ -261,7 +261,7 @@ describe("buildLegalStatus", () => {
     const files = [
       makeFile({
         warrant_required: true,
-        warrant_status: "pending_application",
+        warrant_status: "applied",
         file_access_blocked: true,
       }),
     ];

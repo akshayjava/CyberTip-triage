@@ -36,10 +36,11 @@ interface QueuedJob {
 }
 
 const inMemoryQueue: QueuedJob[] = [];
-let isProcessing = false;
+const activeJobs = new Set<string>();
+const MAX_CONCURRENT_JOBS = 1; // Strict serial processing to prevent race conditions
 
 async function processNextJob(): Promise<void> {
-  if (isProcessing) return;
+  if (activeJobs.size >= MAX_CONCURRENT_JOBS) return;
 
   // Sort by priority (lower number = higher priority)
   const next = inMemoryQueue
@@ -48,7 +49,7 @@ async function processNextJob(): Promise<void> {
 
   if (!next) return;
 
-  isProcessing = true;
+  activeJobs.add(next.id);
   next.status = "active";
 
   try {
@@ -79,7 +80,7 @@ async function processNextJob(): Promise<void> {
     next.error = err instanceof Error ? err.message : String(err);
     console.error(`[QUEUE] Job ${next.id} failed:`, err);
   } finally {
-    isProcessing = false;
+    activeJobs.delete(next.id);
     // Process next job
     setImmediate(() => void processNextJob());
   }
@@ -157,23 +158,40 @@ export function getJobStatus(jobId: string): QueuedJob | undefined {
 
 // ── BullMQ production implementation ─────────────────────────────────────────
 
+// Singleton instance to prevent connection exhaustion
+let bullMqQueue: import("bullmq").Queue | null = null;
+
+async function getBullMqQueue(): Promise<import("bullmq").Queue> {
+  if (bullMqQueue) return bullMqQueue;
+
+  const { Queue } = await import("bullmq");
+  const { loadConfig } = await import("./config.js");
+  const config = loadConfig();
+
+  bullMqQueue = new Queue("cybertips", {
+    connection: {
+      host: config.queue.redis_host,
+      port: config.queue.redis_port,
+    },
+  });
+
+  return bullMqQueue;
+}
+
+export async function closeQueue(): Promise<void> {
+  if (bullMqQueue) {
+    await bullMqQueue.close();
+    bullMqQueue = null;
+  }
+}
+
 async function enqueueBullMq(
   jobId: string,
   input: RawTipInput,
   priority: number,
   delay_ms?: number
 ): Promise<string> {
-  // Lazy import — only required when QUEUE_MODE=bullmq
-  const { Queue } = await import("bullmq");
-  const { loadConfig } = await import("./config.js");
-  const config = loadConfig();
-
-  const queue = new Queue("cybertips", {
-    connection: {
-      host: config.queue.redis_host,
-      port: config.queue.redis_port,
-    },
-  });
+  const queue = await getBullMqQueue();
 
   const job = await queue.add("process_tip", input, {
     jobId,
@@ -183,7 +201,6 @@ async function enqueueBullMq(
     backoff: { type: "exponential", delay: 2000 },
   });
 
-  await queue.close();
   return job.id ?? jobId;
 }
 
