@@ -50,7 +50,7 @@ import "dotenv/config";
  *     script_<ts>.json    — Timestamped script archives
  */
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { DEFAULT_CONFIG } from "./types.js";
 import { generateScript } from "./script.js";
@@ -108,7 +108,6 @@ async function main(): Promise<void> {
     if (!existsSync(latestPath)) {
       die("No script found. Run without --skip-script first.");
     }
-    const { readFileSync } = await import("fs");
     script = JSON.parse(readFileSync(latestPath, "utf-8")) as DemoScript;
     scriptPath = latestPath;
     console.log(`\n[1/5] Using existing script: ${scriptPath}`);
@@ -190,7 +189,6 @@ async function main(): Promise<void> {
   console.log(`   Captions: ${result.captions_path}\n`);
 
   // Save generation manifest
-  const { writeFileSync } = await import("fs");
   writeFileSync(
     resolve(OUTPUT_DIR, "manifest.json"),
     JSON.stringify(result, null, 2)
