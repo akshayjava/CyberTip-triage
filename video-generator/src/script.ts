@@ -164,7 +164,7 @@ export async function generateScript(
   }
 
   // Ensure output dir exists
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const scriptPath = join(outputDir, `script_${ts}.json`);

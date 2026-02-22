@@ -15,7 +15,7 @@
  * showing cue timing, which is useful for debugging sync issues.
  */
 
-import { existsSync, mkdirSync, copyFileSync } from "fs";
+import { mkdirSync, copyFileSync } from "fs";
 import { join } from "path";
 import type { DemoScript, ScriptCue, PlaywrightAction, VideoConfig } from "./types.js";
 
@@ -26,11 +26,11 @@ export async function recordScreen(
   config: VideoConfig,
   outputDir = "./output"
 ): Promise<string> {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   // Playwright requires a non-existing dir for recording — use a temp path
   const recordingDir = join(outputDir, "_recording_tmp");
-  if (!existsSync(recordingDir)) mkdirSync(recordingDir, { recursive: true });
+  mkdirSync(recordingDir, { recursive: true });
 
   const { chromium } = await import("playwright");
 

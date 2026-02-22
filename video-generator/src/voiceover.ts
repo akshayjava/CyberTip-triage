@@ -12,7 +12,7 @@
  * Cue timing is maintained by inserting pauses between narration segments.
  */
 
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import type { DemoScript, VideoConfig } from "./types.js";
 
@@ -23,7 +23,7 @@ export async function generateVoiceover(
   config: VideoConfig,
   outputDir = "./output"
 ): Promise<string> {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   const voiceoverPath = join(outputDir, "voiceover.mp3");
 
@@ -205,7 +205,7 @@ export function generateCaptions(
   script: DemoScript,
   outputDir = "./output"
 ): string {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
   const captionsPath = join(outputDir, "captions.srt");
 
   const lines: string[] = [];
