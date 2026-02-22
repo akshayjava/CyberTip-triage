@@ -31,7 +31,7 @@ export async function assembleVideo(
   captionsPath: string,
   outputDir = "./output"
 ): Promise<string> {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   const ffmpeg = findFFmpeg();
   console.log(`[ASSEMBLE] FFmpeg found at: ${ffmpeg}`);
