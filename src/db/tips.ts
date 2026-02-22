@@ -444,52 +444,80 @@ export interface TipStats {
 export async function getTipStats(): Promise<TipStats> {
   if (!isPostgres()) {
     const tips = Array.from(memStore.values());
+
+    let total = 0;
+    let crisis_alerts = 0;
+    let blocked = 0;
+    const by_tier: Record<string, number> = {
+      IMMEDIATE: 0, URGENT: 0, PAUSED: 0, STANDARD: 0, MONITOR: 0,
+    };
+
+    for (const t of tips) {
+      total++;
+      if (t.priority?.victim_crisis_alert === true) {
+        crisis_alerts++;
+      }
+      if (t.status === "BLOCKED") {
+        blocked++;
+      }
+      const tier = t.priority?.tier;
+      if (tier && tier in by_tier) {
+        by_tier[tier]++;
+      }
+    }
+
     return {
-      total: tips.length,
-      by_tier: {
-        IMMEDIATE: tips.filter((t) => t.priority?.tier === "IMMEDIATE").length,
-        URGENT:    tips.filter((t) => t.priority?.tier === "URGENT").length,
-        PAUSED:    tips.filter((t) => t.priority?.tier === "PAUSED").length,
-        STANDARD:  tips.filter((t) => t.priority?.tier === "STANDARD").length,
-        MONITOR:   tips.filter((t) => t.priority?.tier === "MONITOR").length,
-      },
-      crisis_alerts: tips.filter((t) => t.priority?.victim_crisis_alert === true).length,
-      blocked: tips.filter((t) => t.status === "BLOCKED").length,
+      total,
+      by_tier,
+      crisis_alerts,
+      blocked,
     };
   }
 
   const pool = getPool();
-  const result = await pool.query<{ tier: string | null; count: string }>(
-    `SELECT priority->>'tier' as tier, COUNT(*) as count
+  // ⚡ Bolt Optimization: Combined 3 sequential queries into 1 using FILTER aggregation
+  const result = await pool.query<{
+    tier: string | null;
+    count: string;
+    crisis_count: string;
+    blocked_count: string;
+  }>(
+    `SELECT
+       priority->>'tier' as tier,
+       COUNT(*) as count,
+       COUNT(*) FILTER (WHERE priority->>'victim_crisis_alert' = 'true') as crisis_count,
+       COUNT(*) FILTER (WHERE status = 'BLOCKED') as blocked_count
      FROM cyber_tips
      GROUP BY priority->>'tier'`
-  );
-
-  const crisis = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) as count FROM cyber_tips
-     WHERE priority->>'victim_crisis_alert' = 'true'`
-  );
-
-  const blocked = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) as count FROM cyber_tips WHERE status = 'BLOCKED'`
   );
 
   const by_tier: Record<string, number> = {
     IMMEDIATE: 0, URGENT: 0, PAUSED: 0, STANDARD: 0, MONITOR: 0,
   };
+
   let total = 0;
+  let crisis_alerts = 0;
+  let blocked = 0;
+
   for (const row of result.rows) {
-    const tier = row.tier ?? "pending";
     const count = parseInt(row.count, 10);
-    if (tier in by_tier) by_tier[tier] = count;
+    const crisis = parseInt(row.crisis_count, 10);
+    const blk = parseInt(row.blocked_count, 10);
+
+    if (row.tier && row.tier in by_tier) {
+      by_tier[row.tier] = count;
+    }
+
     total += count;
+    crisis_alerts += crisis;
+    blocked += blk;
   }
 
   return {
     total,
     by_tier,
-    crisis_alerts: parseInt(crisis.rows[0]?.count ?? "0", 10),
-    blocked: parseInt(blocked.rows[0]?.count ?? "0", 10),
+    crisis_alerts,
+    blocked,
   };
 }
 
