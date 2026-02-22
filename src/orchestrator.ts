@@ -359,7 +359,7 @@ export async function processTip(input: RawTipInput): Promise<CyberTip> {
   if (linkerResult.status === "fulfilled") {
     tip = { ...tip, links: linkerResult.value };
     const paused = linkerResult.value.deconfliction_matches.some(
-      (m: any) => m.active_investigation
+      (m) => m.active_investigation
     );
     emit(tip.tip_id, "linker", "done", paused ? "⚠️ Deconfliction conflict" : "Linked");
   } else {
