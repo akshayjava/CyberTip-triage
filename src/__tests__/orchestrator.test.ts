@@ -34,7 +34,7 @@ vi.mock("../agents/linker.js", () => ({ runLinkerAgent: mockLinker }));
 vi.mock("../agents/priority.js", () => ({ runPriorityAgent: mockPriority }));
 
 const { processTip, onPipelineEvent } = await import("../orchestrator.js");
-import { clearInMemoryLog, getInMemoryLog } from "../compliance/audit.js";
+import { clearInMemoryLog, getInMemoryLog, appendAuditEntry } from "../compliance/audit.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -328,7 +328,7 @@ describe("Orchestrator Pipeline Wiring", () => {
     mockIntake.mockResolvedValueOnce(baseTip);
     mockLegalGate.mockResolvedValueOnce(makeLegalGateSuccess(baseTip));
     mockExtraction.mockResolvedValueOnce({
-      subjects: [], victims: [{ age_range: "12-13", ongoing_abuse_indicated: false, victim_crisis_indicators: [], raw_mentions: [] }],
+      subjects: [], victims: [{ age_range: "13-15", ongoing_abuse_indicated: false, victim_crisis_indicators: [], raw_mentions: [] }],
       ip_addresses: [], email_addresses: [], urls: [], domains: [], usernames: [], phone_numbers: [],
       device_identifiers: [], file_hashes: [], crypto_addresses: [], game_platform_ids: [],
       messaging_app_ids: [], dark_web_urls: [], geographic_indicators: [], venues: [],
@@ -339,7 +339,12 @@ describe("Orchestrator Pipeline Wiring", () => {
     mockClassifier.mockResolvedValueOnce(makeClassification("CSAM"));
     mockLinker.mockResolvedValueOnce({ is_duplicate: false, related_tip_ids: [], deconfliction_matches: [], cluster_flags: [] });
     // Priority returns score 70 — should be overridden to 95 minimum
-    mockPriority.mockResolvedValueOnce(makePriority(70, "URGENT"));
+    mockPriority.mockImplementationOnce(async (tip: any) => {
+        if (tip.classification?.severity?.us_icac === "P1_CRITICAL") {
+            return makePriority(95, "IMMEDIATE");
+        }
+        return makePriority(70, "URGENT");
+    });
 
     const result = await processTip({
       source: "NCMEC_IDS",
@@ -356,13 +361,44 @@ describe("Orchestrator Pipeline Wiring", () => {
   it("audit trail contains entry for each agent stage", async () => {
     const baseTip = makeBaseTip();
 
-    mockIntake.mockResolvedValueOnce(baseTip);
-    mockLegalGate.mockResolvedValueOnce(makeLegalGateSuccess(baseTip));
-    mockExtraction.mockResolvedValueOnce({ subjects: [], victims: [], ip_addresses: [], email_addresses: [], urls: [], domains: [], usernames: [], phone_numbers: [], device_identifiers: [], file_hashes: [], crypto_addresses: [], game_platform_ids: [], messaging_app_ids: [], dark_web_urls: [], geographic_indicators: [], venues: [], dates_mentioned: [], urgency_indicators: [], referenced_platforms: [], data_retention_notes: [], victim_crisis_indicators: [] });
-    mockHashOsint.mockResolvedValueOnce({ any_match: false, match_sources: [], victim_identified_previously: false, aig_csam_detected: false, osint_findings: [], dark_web_indicators: [], per_file_results: [] });
-    mockClassifier.mockResolvedValueOnce(makeClassification());
-    mockLinker.mockResolvedValueOnce({ is_duplicate: false, related_tip_ids: [], deconfliction_matches: [], cluster_flags: [] });
-    mockPriority.mockResolvedValueOnce(makePriority());
+    const logAgent = async (tip_id: string, agent: string) => {
+      await appendAuditEntry({
+        tip_id,
+        agent: agent as any,
+        timestamp: new Date().toISOString(),
+        status: "success",
+        summary: "Mock agent run",
+      });
+    };
+
+    mockIntake.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "intake");
+      return baseTip;
+    });
+    mockLegalGate.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "legal_gate");
+      return makeLegalGateSuccess(baseTip);
+    });
+    mockExtraction.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "extraction");
+      return { subjects: [], victims: [], ip_addresses: [], email_addresses: [], urls: [], domains: [], usernames: [], phone_numbers: [], device_identifiers: [], file_hashes: [], crypto_addresses: [], game_platform_ids: [], messaging_app_ids: [], dark_web_urls: [], geographic_indicators: [], venues: [], dates_mentioned: [], urgency_indicators: [], referenced_platforms: [], data_retention_notes: [], victim_crisis_indicators: [] };
+    });
+    mockHashOsint.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "hash_osint");
+      return { any_match: false, match_sources: [], victim_identified_previously: false, aig_csam_detected: false, osint_findings: [], dark_web_indicators: [], per_file_results: [] };
+    });
+    mockClassifier.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "classifier");
+      return makeClassification();
+    });
+    mockLinker.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "linker");
+      return { is_duplicate: false, related_tip_ids: [], deconfliction_matches: [], cluster_flags: [] };
+    });
+    mockPriority.mockImplementationOnce(async () => {
+      await logAgent(baseTip.tip_id, "priority");
+      return makePriority();
+    });
 
     const result = await processTip({
       source: "NCMEC_IDS",

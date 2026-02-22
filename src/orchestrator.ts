@@ -15,7 +15,7 @@
  *   5. Priority        → score, route, alert
  */
 
-import type { CyberTip, LegalStatus } from "./models/index.js";
+import type { CyberTip, LegalStatus, Victim } from "./models/index.js";
 import { appendAuditEntry } from "./compliance/audit.js";
 import { runIntakeAgent, type RawTipInput } from "./agents/intake.js";
 import { runLegalGateAgent } from "./agents/legal_gate.js";
@@ -104,9 +104,9 @@ function applyCriticalOverrides(tip: CyberTip): CyberTip {
   let updated = { ...tip };
 
   // CSAM + confirmed minor victim → always P1_CRITICAL
-  const hasMinorVictim = tip.extracted?.victims.some((v: any) =>
+  const hasMinorVictim = tip.extracted?.victims?.some((v: Victim) =>
     ["0-2", "3-5", "6-9", "10-12", "13-15", "16-17"].includes(v.age_range)
-  );
+  ) ?? false;
 
   if (
     tip.classification &&
@@ -135,7 +135,7 @@ export async function processTip(input: RawTipInput): Promise<CyberTip> {
   const pipelineStart = Date.now();
 
   // ── Stage 0: Instant Demo Bypass ───────────────────────────────────────────
-  if (process.env["DEMO_MODE"] === "true" || process.env["DB_MODE"] === "memory") {
+  if ((process.env["DEMO_MODE"] === "true" || process.env["DB_MODE"] === "memory") && process.env["NODE_ENV"] !== "test") {
     const rawContent = input.raw_content.toLowerCase();
     const tipId = crypto.randomUUID();
 
