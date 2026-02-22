@@ -222,23 +222,21 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
   );
   if (tipRow.rows.length === 0) return null;
 
-  // Fetch associated files
-  const filesRow = await pool.query<FileRow>(
-    `SELECT * FROM tip_files WHERE tip_id = $1 ORDER BY created_at`,
-    [tipId]
-  );
-
-  // Fetch preservation requests
-  const presRow = await pool.query<Record<string, unknown>>(
-    `SELECT * FROM preservation_requests WHERE tip_id = $1 ORDER BY created_at`,
-    [tipId]
-  );
-
-  // Fetch audit trail (most recent 100 entries for this tip)
-  const auditRow = await pool.query<Record<string, unknown>>(
-    `SELECT * FROM audit_log WHERE tip_id = $1 ORDER BY timestamp LIMIT 100`,
-    [tipId]
-  );
+  // Fetch associated data concurrently
+  const [filesRow, presRow, auditRow] = await Promise.all([
+    pool.query<FileRow>(
+      `SELECT * FROM tip_files WHERE tip_id = $1 ORDER BY created_at`,
+      [tipId]
+    ),
+    pool.query<Record<string, unknown>>(
+      `SELECT * FROM preservation_requests WHERE tip_id = $1 ORDER BY created_at`,
+      [tipId]
+    ),
+    pool.query<Record<string, unknown>>(
+      `SELECT * FROM audit_log WHERE tip_id = $1 ORDER BY timestamp LIMIT 100`,
+      [tipId]
+    ),
+  ]);
 
   return assembleTip(tipRow.rows[0]!, filesRow.rows, presRow.rows, auditRow.rows);
 }
