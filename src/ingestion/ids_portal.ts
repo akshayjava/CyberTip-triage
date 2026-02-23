@@ -28,6 +28,7 @@ import { enqueueTip } from "./queue.js";
 import type { IngestionConfig } from "./config.js";
 import { parseNcmecPdfText, validateNcmecPdf } from "../parsers/ncmec_pdf.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
+import PQueue from "p-queue";
 
 // ── Processed-tip tracking (in-memory; backed by DB on postgres builds) ────────
 
@@ -445,9 +446,11 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
 
       console.log(`[IDS] Found ${tipRefs.length} new tip(s)`);
 
-      for (const tipRef of tipRefs) {
+      const queue = new PQueue({ concurrency: 5 });
+
+      const processingTasks = tipRefs.map((tipRef) => queue.add(async () => {
         try {
-          const pdfText = await downloadAndExtractTip(tipRef, session, config.ids_portal.download_dir);
+          const pdfText = await downloadAndExtractTip(tipRef, session!, config.ids_portal.download_dir);
 
           // Validate PDF structure before enqueueing
           const parsed = parseNcmecPdfText(pdfText);
@@ -489,7 +492,9 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
           console.error(`[IDS] Failed to process tip ${tipRef.tip_id}:`, tipErr);
           // Don't add to processedTipIds — will retry on next poll
         }
-      }
+      }));
+
+      await Promise.all(processingTasks);
 
       consecutiveFailures = 0;
     } catch (err) {
