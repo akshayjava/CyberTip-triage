@@ -7,19 +7,59 @@
 
 import { enqueueTip } from "./queue.js";
 import type { IngestionConfig } from "./config.js";
+import { parseNcmecXml, xmlAll } from "../parsers/ncmec_xml.js";
 
 const seenReportIds = new Set<string>();
 
-async function fetchNcmecReports(
+export async function fetchNcmecReports(
   baseUrl: string,
   apiKey: string,
   since?: string
 ): Promise<Array<{ report_id: string; xml: string; urgent: boolean }>> {
-  // TODO: Implement NCMEC API polling
-  // Endpoint: GET /api/v1/reports?since=<ISO>&format=xml
-  // Requires NCMEC API key (law enforcement registration required)
-  // Returns paginated XML reports
-  throw new Error("NCMEC API requires law enforcement API credentials.");
+  const results: Array<{ report_id: string; xml: string; urgent: boolean }> = [];
+  let nextUrl: string | null = `${baseUrl}/api/v1/reports?since=${encodeURIComponent(since || "")}&format=xml`;
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/xml"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`NCMEC API error: ${response.status} ${response.statusText}`);
+    }
+
+    const text = await response.text();
+
+    // Extract reports using xmlAll.
+    // We look for top-level report tags which could be Report or CyberTiplineReport
+    const reports = [...xmlAll(text, "Report"), ...xmlAll(text, "CyberTiplineReport")];
+
+    for (const xml of reports) {
+      const parsed = parseNcmecXml(xml);
+      if (parsed.ncmec_tip_number) {
+        results.push({
+          report_id: parsed.ncmec_tip_number,
+          xml,
+          urgent: parsed.ncmec_urgent_flag
+        });
+      }
+    }
+
+    // Handle pagination via Link header (RFC 5988)
+    const linkHeader = response.headers.get("Link");
+    nextUrl = null;
+    if (linkHeader) {
+      const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/i);
+      if (match) {
+        nextUrl = match[1];
+      }
+    }
+  }
+
+  return results;
 }
 
 export async function startNcmecApiListener(

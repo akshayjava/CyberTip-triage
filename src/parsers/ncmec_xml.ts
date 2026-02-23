@@ -66,7 +66,7 @@ function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
   });
 }
 
-function xmlAll(xml: string, tag: string): string[] {
+export function xmlAll(xml: string, tag: string): string[] {
   return withPlaceholders(xml, (safeXml, restore) => {
     const pattern = new RegExp(
       `<${tag}(?![a-zA-Z0-9])[^>]*>[\\s\\S]*?<\\/${tag}>`,
