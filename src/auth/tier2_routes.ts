@@ -48,6 +48,7 @@ import {
   recordWarrantGrant,
   recordWarrantDenial,
   getWarrantApplications,
+  getWarrantApplicationById,
   type WarrantApplication,
 } from "../tools/legal/warrant_workflow.js";
 import { generateWarrantAffidavit } from "../tools/legal/warrant_affidavit.js";
@@ -305,17 +306,8 @@ async function handleGetWarrantApplications(req: Request, res: Response): Promis
 
 async function handleGetWarrantApplication(req: Request, res: Response): Promise<void> {
   const appId = req.params["appId"] ?? "";
-  // getWarrantApplications returns all — search across all tips in memory
-  // In production this would be a direct DB query
-  const allApps: WarrantApplication[] = [];
-  // Small search: we expose a filter by appId across the module
-  const { listTips } = await import("../db/tips.js");
-  const { tips } = await listTips({ limit: 500 });
-  for (const tip of tips) {
-    const apps = getWarrantApplications(tip.tip_id);
-    const found = apps.find((a) => a.application_id === appId);
-    if (found) { res.json(found); return; }
-  }
+  const found = getWarrantApplicationById(appId);
+  if (found) { res.json(found); return; }
   res.status(404).json({ error: "Warrant application not found" });
 }
 
@@ -325,14 +317,7 @@ async function handleSubmitWarrantToDA(req: Request, res: Response): Promise<voi
   const { da_name } = req.body as { da_name?: string };
 
   // Find application
-  const { listTips } = await import("../db/tips.js");
-  const { tips } = await listTips({ limit: 500 });
-  let foundApp: WarrantApplication | null = null;
-  for (const tip of tips) {
-    const apps = getWarrantApplications(tip.tip_id);
-    const app  = apps.find((a) => a.application_id === appId);
-    if (app) { foundApp = app; break; }
-  }
+  const foundApp = getWarrantApplicationById(appId);
   if (!foundApp) { res.status(404).json({ error: "Application not found" }); return; }
 
   foundApp.status       = "pending_da_review";
