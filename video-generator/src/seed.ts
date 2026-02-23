@@ -213,8 +213,15 @@ export async function seedDemoData(
 
   // Wait for pipeline to process before recording begins
   if (seeded > 0) {
-    console.log("[SEED] Waiting 15s for pipeline to process tips...");
-    await sleep(15_000);
+    console.log("[SEED] Triggering manual cluster scan...");
+    try {
+      await fetch(`${appUrl}/api/jobs/cluster-scan`, { method: "POST" });
+    } catch (e) {
+      console.warn("[SEED] Failed to trigger cluster scan:", e);
+    }
+
+    console.log("[SEED] Waiting 30s for pipeline and clustering to process tips...");
+    await sleep(30_000);
   }
 
   return { seeded, failed };

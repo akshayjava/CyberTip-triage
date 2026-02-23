@@ -1,103 +1,103 @@
 1
 00:00:00,000 --> 00:00:07,900
-CyberTip Triage — Investigator Dashboard
+The tip volume problem
 
 2
 00:00:08,000 --> 00:00:14,900
-Real-time operational metrics
+Real-time operational overview
 
 3
-00:00:15,000 --> 00:00:17,233
+00:00:15,000 --> 00:00:16,650
 Every incoming tip is scored by AI
 
 4
-00:00:17,333 --> 00:00:19,567
+00:00:16,750 --> 00:00:18,400
 and assigned a priority tier — from
 
 5
-00:00:19,667 --> 00:00:21,900
-Immediate down to Monitor.
+00:00:18,500 --> 00:00:20,150
+Immediate down to Monitor. No more guessing
 
 6
-00:00:22,000 --> 00:00:27,900
-Victim crisis detection
+00:00:20,250 --> 00:00:21,900
+what to work first.
 
 7
-00:00:28,000 --> 00:00:29,900
-Select the top tip. The detail pane
+00:00:22,000 --> 00:00:27,900
+Filtering critical tips
 
 8
-00:00:30,000 --> 00:00:31,900
-loads the full NeCMEC report, AI analysis,
+00:00:28,000 --> 00:00:30,233
+Select the top tip. The detail pane
 
 9
-00:00:32,000 --> 00:00:33,900
-and legal guidance.
+00:00:30,333 --> 00:00:32,567
+shows the AI's crisis assessment, subject identifiers,
 
 10
-00:00:34,000 --> 00:00:36,233
-Notice the tier badge — P1 Critical.
+00:00:32,667 --> 00:00:34,900
+and the ESP's original report data.
 
 11
-00:00:36,333 --> 00:00:38,567
-The system flagged an active minor based
+00:00:35,000 --> 00:00:41,900
+Bundle deduplication
 
 12
-00:00:38,667 --> 00:00:40,900
-on language analysis and metadata.
+00:00:42,000 --> 00:00:48,900
+Wilson v. United States compliance
 
 13
-00:00:41,000 --> 00:00:47,900
-Fourth Amendment — Wilson v. Ewing protection
+00:00:49,000 --> 00:00:50,900
+Files the ESP never viewed are automatically
 
 14
-00:00:48,000 --> 00:00:49,900
-Blocked files are clearly marked. No investigator
+00:00:51,000 --> 00:00:52,900
+blocked. You cannot open them without a
 
 15
-00:00:50,000 --> 00:00:51,900
-can open them without a warrant —
+00:00:53,000 --> 00:00:54,900
+warrant. The system enforces this — no
 
 16
-00:00:52,000 --> 00:00:53,900
-zero ambiguity.
+00:00:55,000 --> 00:00:56,900
+exceptions, no accidental Fourth Amendment violations.
 
 17
-00:00:54,000 --> 00:01:00,900
-Warrant applied — tracking begins
+00:00:57,000 --> 00:01:03,900
+Integrated warrant tracking
 
 18
-00:01:01,000 --> 00:01:03,233
-Scroll down to the legal note. Circuit-specific
+00:01:04,000 --> 00:01:05,900
+When the warrant is granted, blocked files
 
 19
-00:01:03,333 --> 00:01:05,567
-guidance is generated for each tip based
+00:01:06,000 --> 00:01:07,900
+unlock automatically. Full chain of custody is
 
 20
-00:01:05,667 --> 00:01:07,900
-on your jurisdiction.
+00:01:08,000 --> 00:01:09,900
+logged for court.
 
 21
-00:01:08,000 --> 00:01:09,900
-The legal analysis cites relevant case law
+00:01:10,000 --> 00:01:12,233
+Every tip includes circuit-specific legal guidance. The
 
 22
-00:01:10,000 --> 00:01:11,900
-so your affidavits start with a foundation,
+00:01:12,333 --> 00:01:14,567
+system identifies your jurisdiction and surfaces relevant
 
 23
-00:01:12,000 --> 00:01:13,900
-not a blank page.
+00:01:14,667 --> 00:01:16,900
+case law and procedural requirements.
 
 24
-00:01:14,000 --> 00:01:20,900
-CLU cluster detection — viral dedup
+00:01:17,000 --> 00:01:21,900
+Supervisor panel
 
 25
-00:01:21,000 --> 00:01:27,900
-Supervisor admin panel
+00:01:22,000 --> 00:01:26,900
+Mobile on-call access
 
 26
-00:01:28,000 --> 00:01:32,900
+00:01:27,000 --> 00:01:31,900
 CyberTip Triage — Built for ICAC
