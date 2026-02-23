@@ -58,11 +58,11 @@ function xmlText(xml: string, tag: string): string | undefined {
 function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
   return withPlaceholders(xml, (safeXml, restore) => {
     const pattern = new RegExp(
-      `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}="([^"]*)"`,
+      `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}=(?:"([^"]*)"|'([^']*)')`,
       "i"
     );
     const m = pattern.exec(safeXml);
-    return m ? restore(m[1]).trim() || undefined : undefined;
+    return m ? restore(m[1] ?? m[2]).trim() || undefined : undefined;
   });
 }
 
