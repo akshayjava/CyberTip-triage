@@ -228,6 +228,11 @@ export function getWarrantApplications(tipId: string): WarrantApplication[] {
   return Array.from(applicationStore.values()).filter((a: any) => a.tip_id === tipId);
 }
 
+/** Get a single warrant application by ID (O(1) lookup) */
+export function getWarrantApplicationById(applicationId: string): WarrantApplication | undefined {
+  return applicationStore.get(applicationId);
+}
+
 /** For testing — clear the application store */
 export function clearApplicationStore(): void {
   applicationStore.clear();
