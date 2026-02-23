@@ -47,6 +47,7 @@ import {
   openWarrantApplication,
   recordWarrantGrant,
   recordWarrantDenial,
+  submitWarrantToDA,
   getWarrantApplications,
   getWarrantApplicationById,
   type WarrantApplication,
@@ -300,13 +301,13 @@ async function handleOpenWarrantApplication(req: Request, res: Response): Promis
 
 async function handleGetWarrantApplications(req: Request, res: Response): Promise<void> {
   const tipId = req.params["id"] ?? "";
-  const apps  = getWarrantApplications(tipId);
+  const apps  = await getWarrantApplications(tipId);
   res.json(apps);
 }
 
 async function handleGetWarrantApplication(req: Request, res: Response): Promise<void> {
   const appId = req.params["appId"] ?? "";
-  const found = getWarrantApplicationById(appId);
+  const found = await getWarrantApplicationById(appId);
   if (found) { res.json(found); return; }
   res.status(404).json({ error: "Warrant application not found" });
 }
@@ -316,17 +317,11 @@ async function handleSubmitWarrantToDA(req: Request, res: Response): Promise<voi
   const session = req.session;
   const { da_name } = req.body as { da_name?: string };
 
-  // Find application
-  const foundApp = getWarrantApplicationById(appId);
-  if (!foundApp) { res.status(404).json({ error: "Application not found" }); return; }
-
-  foundApp.status       = "pending_da_review";
-  foundApp.da_name      = da_name ?? foundApp.da_name;
-  foundApp.submitted_at = new Date().toISOString();
-  foundApp.updated_at   = new Date().toISOString();
+  const updatedApp = await submitWarrantToDA(appId, da_name);
+  if (!updatedApp) { res.status(404).json({ error: "Application not found" }); return; }
 
   await appendAuditEntry({
-    tip_id:    foundApp.tip_id,
+    tip_id:    updatedApp.tip_id,
     agent:     "HumanAction",
     timestamp: new Date().toISOString(),
     status:    "success",
@@ -334,7 +329,7 @@ async function handleSubmitWarrantToDA(req: Request, res: Response): Promise<voi
     human_actor: session?.badge_number,
   });
 
-  res.json(foundApp);
+  res.json(updatedApp);
 }
 
 async function handleGrantWarrant(req: Request, res: Response): Promise<void> {

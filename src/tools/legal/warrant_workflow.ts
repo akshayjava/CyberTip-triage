@@ -30,6 +30,7 @@
  */
 
 import { updateFileWarrant } from "../../db/tips.js";
+import { getPool } from "../../db/pool.js";
 import type { CyberTip } from "../../models/index.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -62,9 +63,13 @@ export interface WarrantApplication {
   updated_at: string;
 }
 
-// ── In-memory store (Tier 2.2 — replace with DB table 002+) ──────────────────
+// ── In-memory store (Fallback when DB_MODE != postgres) ───────────────────────
 
 const applicationStore = new Map<string, WarrantApplication>();
+
+function isPostgres(): boolean {
+  return process.env["DB_MODE"] === "postgres";
+}
 
 // ── Affidavit builder ─────────────────────────────────────────────────────────
 
@@ -173,7 +178,31 @@ export async function openWarrantApplication(
     updated_at: now,
   };
 
-  applicationStore.set(application.application_id, application);
+  if (!isPostgres()) {
+    applicationStore.set(application.application_id, application);
+    return application;
+  }
+
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO warrant_applications (
+       application_id, tip_id, file_ids, status, affidavit_draft,
+       da_name, court, created_by, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [
+      application.application_id,
+      application.tip_id,
+      JSON.stringify(application.file_ids),
+      application.status,
+      application.affidavit_draft,
+      application.da_name ?? null,
+      application.court ?? null,
+      application.created_by,
+      application.created_at,
+      application.updated_at
+    ]
+  );
+
   return application;
 }
 
@@ -184,25 +213,80 @@ export async function recordWarrantGrant(
   grantingJudge: string,
   approvedBy: string
 ): Promise<WarrantApplication | null> {
-  const app = applicationStore.get(applicationId);
+  let app: WarrantApplication | null = null;
+  const now = new Date().toISOString();
+
+  if (!isPostgres()) {
+    app = applicationStore.get(applicationId) ?? null;
+    if (!app) return null;
+
+    app.status = "granted";
+    app.warrant_number = warrantNumber;
+    app.granting_judge = grantingJudge;
+    app.approved_by = approvedBy;
+    app.decided_at = now;
+    app.updated_at = now;
+    applicationStore.set(applicationId, app);
+  } else {
+    const pool = getPool();
+    const result = await pool.query<WarrantApplication>(
+      `UPDATE warrant_applications SET
+         status = 'granted',
+         warrant_number = $1,
+         granting_judge = $2,
+         approved_by = $3,
+         decided_at = $4,
+         updated_at = $5
+       WHERE application_id = $6
+       RETURNING *`,
+      [warrantNumber, grantingJudge, approvedBy, now, now, applicationId]
+    );
+    app = result.rows[0] ?? null;
+  }
+
   if (!app) return null;
 
-  const now = new Date().toISOString();
-  app.status = "granted";
-  app.warrant_number = warrantNumber;
-  app.granting_judge = grantingJudge;
-  app.approved_by = approvedBy;
-  app.decided_at = now;
-  app.updated_at = now;
-
   // Unblock all files covered by this warrant
-  // Note: updateFileWarrant also writes to DB (if postgres) and audit log
+  // Note: updateFileWarrant writes to DB (if postgres) and handles audit log
   for (const fileId of app.file_ids) {
     await updateFileWarrant(app.tip_id, fileId, "granted", warrantNumber, grantingJudge);
   }
 
-  applicationStore.set(applicationId, app);
   return app;
+}
+
+/** Submit warrant application to DA for review */
+export async function submitWarrantToDA(
+  applicationId: string,
+  daName?: string
+): Promise<WarrantApplication | null> {
+  const now = new Date().toISOString();
+
+  if (!isPostgres()) {
+    const app = applicationStore.get(applicationId);
+    if (!app) return null;
+
+    app.status = "pending_da_review";
+    if (daName) app.da_name = daName;
+    app.submitted_at = now;
+    app.updated_at = now;
+    applicationStore.set(applicationId, app);
+    return app;
+  }
+
+  const pool = getPool();
+  const result = await pool.query<WarrantApplication>(
+    `UPDATE warrant_applications SET
+       status = 'pending_da_review',
+       da_name = COALESCE($1, da_name),
+       submitted_at = $2,
+       updated_at = $3
+     WHERE application_id = $4
+     RETURNING *`,
+    [daName ?? null, now, now, applicationId]
+  );
+
+  return result.rows[0] ?? null;
 }
 
 /** Record a denied warrant */
@@ -210,27 +294,60 @@ export async function recordWarrantDenial(
   applicationId: string,
   denialReason: string
 ): Promise<WarrantApplication | null> {
-  const app = applicationStore.get(applicationId);
-  if (!app) return null;
-
   const now = new Date().toISOString();
-  app.status = "denied";
-  app.denial_reason = denialReason;
-  app.decided_at = now;
-  app.updated_at = now;
 
-  applicationStore.set(applicationId, app);
-  return app;
+  if (!isPostgres()) {
+    const app = applicationStore.get(applicationId);
+    if (!app) return null;
+
+    app.status = "denied";
+    app.denial_reason = denialReason;
+    app.decided_at = now;
+    app.updated_at = now;
+    applicationStore.set(applicationId, app);
+    return app;
+  }
+
+  const pool = getPool();
+  const result = await pool.query<WarrantApplication>(
+    `UPDATE warrant_applications SET
+       status = 'denied',
+       denial_reason = $1,
+       decided_at = $2,
+       updated_at = $3
+     WHERE application_id = $4
+     RETURNING *`,
+    [denialReason, now, now, applicationId]
+  );
+  return result.rows[0] ?? null;
 }
 
 /** Get all warrant applications for a tip */
-export function getWarrantApplications(tipId: string): WarrantApplication[] {
-  return Array.from(applicationStore.values()).filter((a: any) => a.tip_id === tipId);
+export async function getWarrantApplications(tipId: string): Promise<WarrantApplication[]> {
+  if (!isPostgres()) {
+    return Array.from(applicationStore.values()).filter((a: any) => a.tip_id === tipId);
+  }
+
+  const pool = getPool();
+  const result = await pool.query<WarrantApplication>(
+    `SELECT * FROM warrant_applications WHERE tip_id = $1 ORDER BY created_at DESC`,
+    [tipId]
+  );
+  return result.rows;
 }
 
 /** Get a single warrant application by ID (O(1) lookup) */
-export function getWarrantApplicationById(applicationId: string): WarrantApplication | undefined {
-  return applicationStore.get(applicationId);
+export async function getWarrantApplicationById(applicationId: string): Promise<WarrantApplication | undefined> {
+  if (!isPostgres()) {
+    return applicationStore.get(applicationId);
+  }
+
+  const pool = getPool();
+  const result = await pool.query<WarrantApplication>(
+    `SELECT * FROM warrant_applications WHERE application_id = $1`,
+    [applicationId]
+  );
+  return result.rows[0] ?? undefined;
 }
 
 /** For testing — clear the application store */

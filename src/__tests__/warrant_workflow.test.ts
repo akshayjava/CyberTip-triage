@@ -3,6 +3,7 @@ import {
   openWarrantApplication,
   recordWarrantGrant,
   recordWarrantDenial,
+  submitWarrantToDA,
   getWarrantApplications,
   buildAffidavitDraft,
   clearApplicationStore,
@@ -64,9 +65,24 @@ describe("Warrant Workflow", () => {
 
     it("stores the application", async () => {
       const app = await openWarrantApplication(mockTip, "officer-123");
-      const storedApps = getWarrantApplications("tip-001");
+      const storedApps = await getWarrantApplications("tip-001");
       expect(storedApps).toHaveLength(1);
       expect(storedApps[0]?.application_id).toBe(app.application_id);
+    });
+  });
+
+  describe("submitWarrantToDA", () => {
+    it("updates status to pending_da_review", async () => {
+      const app = await openWarrantApplication(mockTip, "officer-123");
+
+      await submitWarrantToDA(app.application_id, "DA Harvey Dent");
+
+      const updatedApps = await getWarrantApplications("tip-001");
+      const updatedApp = updatedApps[0];
+
+      expect(updatedApp?.status).toBe("pending_da_review");
+      expect(updatedApp?.da_name).toBe("DA Harvey Dent");
+      expect(updatedApp?.submitted_at).toBeDefined();
     });
   });
 
@@ -81,7 +97,7 @@ describe("Warrant Workflow", () => {
         "supervisor-456"
       );
 
-      const updatedApps = getWarrantApplications("tip-001");
+      const updatedApps = await getWarrantApplications("tip-001");
       const updatedApp = updatedApps[0];
 
       expect(updatedApp?.status).toBe("granted");
@@ -116,7 +132,7 @@ describe("Warrant Workflow", () => {
 
       await recordWarrantDenial(app.application_id, "Insufficient probable cause");
 
-      const updatedApps = getWarrantApplications("tip-001");
+      const updatedApps = await getWarrantApplications("tip-001");
       const updatedApp = updatedApps[0];
 
       expect(updatedApp?.status).toBe("denied");
@@ -145,8 +161,8 @@ describe("Warrant Workflow", () => {
       await upsertTip(otherTip); // Add other tip to DB if needed
       await openWarrantApplication(otherTip, "officer-2");
 
-      const apps1 = getWarrantApplications("tip-001");
-      const apps2 = getWarrantApplications("tip-002");
+      const apps1 = await getWarrantApplications("tip-001");
+      const apps2 = await getWarrantApplications("tip-002");
 
       expect(apps1).toHaveLength(1);
       expect(apps1[0]?.tip_id).toBe("tip-001");
