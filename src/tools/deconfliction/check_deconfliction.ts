@@ -1,61 +1,34 @@
 import { runTool, type ToolResult } from "../types.js";
+import type { DeconflictionResult, DeconflictionProvider } from "./types.js";
+import { StubDeconflictionProvider } from "./providers/stub_provider.js";
+import { HttpDeconflictionProvider } from "./providers/http_provider.js";
 
-export interface DeconflictionResult {
-  match_found: boolean;
-  agency_name?: string;
-  case_number?: string;
-  contact_investigator?: string;
-  overlap_type?: "same_subject" | "same_victim" | "same_ip" | "same_hash" | "same_username";
-  active_investigation: boolean;
-  coordination_recommended: boolean;
-  notes?: string;
-}
+// Re-export for compatibility
+export type { DeconflictionResult };
 
-// Known conflict values for stub testing
-// Any value containing "deconflict_match" triggers a conflict
-async function checkDeconflictionStub(
-  identifierType: string,
-  value: string,
-  jurisdiction: string
-): Promise<DeconflictionResult> {
-  await new Promise(r => setTimeout(r, 25));
+function getProvider(): DeconflictionProvider {
+  const toolMode = process.env["TOOL_MODE"];
+  const apiUrl = process.env["DECONFLICTION_API_URL"];
+  const apiKey = process.env["DECONFLICTION_API_KEY"];
 
-  const hasConflict = value.includes("deconflict_match") || value === "stub_known_subject";
-
-  if (hasConflict) {
-    return {
-      match_found: true,
-      agency_name: "Neighboring County Sheriff's Office",
-      case_number: "SC-2024-18732",
-      contact_investigator: "Det. Jane Smith — 555-0100",
-      overlap_type: "same_subject",
-      active_investigation: true,
-      coordination_recommended: true,
-      notes:
-        "Active investigation opened 30 days ago. Do NOT contact subject or issue " +
-        "preservation requests without coordinating with Det. Smith first.",
-    };
+  // Explicit real mode requires configuration
+  if (toolMode === "real") {
+    if (!apiUrl || !apiKey) {
+      throw new Error(
+        "De-confliction real implementation requires DECONFLICTION_API_URL and DECONFLICTION_API_KEY environment variables. " +
+        "Please configure these for your regional system (e.g., RISSafe, HIDTA)."
+      );
+    }
+    return new HttpDeconflictionProvider(apiUrl, apiKey);
   }
 
-  return {
-    match_found: false,
-    active_investigation: false,
-    coordination_recommended: false,
-  };
-}
+  // Implicit real mode if configured and not explicitly mocked
+  if (apiUrl && apiKey && toolMode !== "mock") {
+    return new HttpDeconflictionProvider(apiUrl, apiKey);
+  }
 
-async function checkDeconflictionReal(
-  identifierType: string,
-  value: string,
-  jurisdiction: string
-): Promise<DeconflictionResult> {
-  // TODO: Integrate with agency's de-confliction system.
-  // Common systems: RISSafe (RISS.net), HighWay (HIDTA), DEA HIDTA
-  // Each requires separate LE registration and API credentials.
-  throw new Error(
-    "De-confliction real implementation not configured. " +
-    "Register with your regional de-confliction system (RISSafe, HighWay, or HIDTA)."
-  );
+  // Default to stub
+  return new StubDeconflictionProvider();
 }
 
 export async function checkDeconfliction(
@@ -63,6 +36,8 @@ export async function checkDeconfliction(
   value: string,
   jurisdiction: string
 ): Promise<ToolResult<DeconflictionResult>> {
-  const fn = process.env["TOOL_MODE"] === "real" ? checkDeconflictionReal : checkDeconflictionStub;
-  return runTool(() => fn(identifierType, value, jurisdiction));
+  return runTool(async () => {
+    const provider = getProvider();
+    return provider.check(identifierType, value, jurisdiction);
+  });
 }
