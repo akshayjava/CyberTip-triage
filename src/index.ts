@@ -16,6 +16,7 @@ import { mountTier3Routes } from "./api/tier3_routes.js";
 import { mountSetupRoutes } from "./api/setup_routes.js";
 import { mountIngestionRoutes } from "./ingestion/routes.js";
 import { authMiddleware } from "./auth/middleware.js";
+import { apiLimiter } from "./middleware/rate-limit.js";
 import { startIdsPoller } from "./ingestion/ids_portal.js";
 import { startNcmecApiListener } from "./ingestion/ncmec_api.js";
 import { startEmailIngestion } from "./ingestion/email.js";
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
   });
 
   // Auth middleware (pass-through unless AUTH_ENABLED=true)
+  app.use("/api", apiLimiter);
   app.use("/api", authMiddleware);
 
   // Mount routes
