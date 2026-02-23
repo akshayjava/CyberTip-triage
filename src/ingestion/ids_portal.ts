@@ -119,7 +119,7 @@ async function extractPdfFromZip(zipBuffer: Buffer): Promise<Buffer> {
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────────
 
-interface IdsSession {
+export interface IdsSession {
   cookie: string;
   authenticated_at: number;
   expires_at: number;   // epoch ms
@@ -236,7 +236,7 @@ async function authenticateIds(
 
 // ── Fetch new tip list from dashboard ─────────────────────────────────────────
 
-interface IdsTipRef {
+export interface IdsTipRef {
   tip_id:       string;
   download_url: string;
   urgent:       boolean;
@@ -303,11 +303,16 @@ async function fetchNewTipRefs(
 
 // ── Download and extract tip ZIP ───────────────────────────────────────────────
 
-async function downloadAndExtractTip(
+export async function downloadAndExtractTip(
   tipRef: IdsTipRef,
   session: IdsSession,
   downloadDir: string
 ): Promise<string> {
+  // Security check: prevent path traversal via tip_id
+  if (!/^[a-zA-Z0-9_-]+$/.test(tipRef.tip_id)) {
+    throw new Error(`Invalid tip_id: ${tipRef.tip_id}`);
+  }
+
   const nodeFetch = (await import("node-fetch" as string) as { default: typeof fetch }).default;
 
   const resp = await withRetry(
