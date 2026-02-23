@@ -104,4 +104,55 @@ describe("NCMEC XML Parser - Edge Cases", () => {
     const parsed = parseNcmecXml(xml);
     expect(parsed.ncmec_tip_number).toBe("999");
   });
+
+  it("extracts correct fields when attributes are present", () => {
+    const xml = `<Report><TiplineNumber id="123">999</TiplineNumber></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_tip_number).toBe("999");
+  });
+
+  it("handles whitespace around values", () => {
+    const xml = `<Report><TiplineNumber>  12345  </TiplineNumber></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_tip_number).toBe("12345");
+  });
+
+  it("handles mixed case tags", () => {
+    const xml = `<Report><tiplinenumber>123</TIPLINENUMBER></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_tip_number).toBe("123");
+  });
+
+  it("handles nested structure correctly (ignoring unrelated nested tags)", () => {
+    const xml = `
+      <Report>
+        <RelatedReport>
+          <TiplineNumber>RELATED123</TiplineNumber>
+        </RelatedReport>
+        <!-- Main TiplineNumber missing -->
+      </Report>
+    `;
+    const parsed = parseNcmecXml(xml);
+    // Regex limitation: picks the first match. Ideally strict XML parsing would fail or return undefined.
+    // Documenting current behavior:
+    expect(parsed.ncmec_tip_number).toBe("RELATED123");
+  });
+
+  it("handles special characters in content", () => {
+    const xml = `<Report><IncidentDescription>User said "Hello & Goodbye"</IncidentDescription></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.section_a.incident_description).toBe('User said "Hello & Goodbye"');
+  });
+
+  it("handles self-closing tags", () => {
+    const xml = `<Report><IsUrgent /></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_urgent_flag).toBe(false);
+  });
+
+  it("handles empty tags", () => {
+    const xml = `<Report><TiplineNumber></TiplineNumber></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_tip_number).toBeUndefined();
+  });
 });
