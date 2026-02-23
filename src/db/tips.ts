@@ -110,32 +110,23 @@ export async function upsertTip(tip: CyberTip): Promise<void> {
     // Upsert files — delete old + insert fresh keeps it simple and correct
     await client.query("DELETE FROM tip_files WHERE tip_id = $1", [tip.tip_id]);
 
-    for (const file of tip.files) {
-      await client.query(
-        `INSERT INTO tip_files (
-           file_id, tip_id, filename, media_type,
-           hash_md5, hash_sha1, hash_sha256, photodna_hash,
-           esp_viewed, esp_viewed_missing, esp_categorized_as, publicly_available,
-           warrant_required, warrant_status, warrant_number, warrant_granted_by,
-           file_access_blocked,
-           ncmec_hash_match, project_vic_match, iwf_match, interpol_icse_match,
-           aig_csam_suspected, aig_detection_confidence, aig_detection_method
-         ) VALUES (
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
-         )
-         ON CONFLICT (file_id) DO UPDATE SET
-           warrant_status          = EXCLUDED.warrant_status,
-           warrant_number          = EXCLUDED.warrant_number,
-           warrant_granted_by      = EXCLUDED.warrant_granted_by,
-           file_access_blocked     = EXCLUDED.file_access_blocked,
-           ncmec_hash_match        = EXCLUDED.ncmec_hash_match,
-           project_vic_match       = EXCLUDED.project_vic_match,
-           iwf_match               = EXCLUDED.iwf_match,
-           interpol_icse_match     = EXCLUDED.interpol_icse_match,
-           aig_csam_suspected      = EXCLUDED.aig_csam_suspected,
-           aig_detection_confidence= EXCLUDED.aig_detection_confidence,
-           aig_detection_method    = EXCLUDED.aig_detection_method`,
-        [
+    // ⚡ Bolt Optimization: Batch insert files (1 query instead of N)
+    if (tip.files.length > 0) {
+      const fileValues: unknown[] = [];
+      const filePlaceholders: string[] = [];
+      let pIdx = 1;
+
+      for (const file of tip.files) {
+        filePlaceholders.push(`(
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}
+        )`);
+
+        fileValues.push(
           file.file_id,
           tip.tip_id,
           file.filename ?? null,
@@ -159,27 +150,51 @@ export async function upsertTip(tip: CyberTip): Promise<void> {
           file.interpol_icse_match,
           file.aig_csam_suspected,
           file.aig_detection_confidence ?? null,
-          file.aig_detection_method ?? null,
-        ]
+          file.aig_detection_method ?? null
+        );
+      }
+
+      await client.query(
+        `INSERT INTO tip_files (
+           file_id, tip_id, filename, media_type,
+           hash_md5, hash_sha1, hash_sha256, photodna_hash,
+           esp_viewed, esp_viewed_missing, esp_categorized_as, publicly_available,
+           warrant_required, warrant_status, warrant_number, warrant_granted_by,
+           file_access_blocked,
+           ncmec_hash_match, project_vic_match, iwf_match, interpol_icse_match,
+           aig_csam_suspected, aig_detection_confidence, aig_detection_method
+         ) VALUES ${filePlaceholders.join(", ")}
+         ON CONFLICT (file_id) DO UPDATE SET
+           warrant_status          = EXCLUDED.warrant_status,
+           warrant_number          = EXCLUDED.warrant_number,
+           warrant_granted_by      = EXCLUDED.warrant_granted_by,
+           file_access_blocked     = EXCLUDED.file_access_blocked,
+           ncmec_hash_match        = EXCLUDED.ncmec_hash_match,
+           project_vic_match       = EXCLUDED.project_vic_match,
+           iwf_match               = EXCLUDED.iwf_match,
+           interpol_icse_match     = EXCLUDED.interpol_icse_match,
+           aig_csam_suspected      = EXCLUDED.aig_csam_suspected,
+           aig_detection_confidence= EXCLUDED.aig_detection_confidence,
+           aig_detection_method    = EXCLUDED.aig_detection_method`,
+        fileValues
       );
     }
 
     // Upsert preservation requests
-    for (const pr of tip.preservation_requests) {
-      await client.query(
-        `INSERT INTO preservation_requests (
-           request_id, tip_id, esp_name, account_identifiers, legal_basis,
-           jurisdiction, issued_at, deadline_for_esp_response,
-           esp_retention_window_days, status, auto_generated,
-           approved_by, letter_text
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT (request_id) DO UPDATE SET
-           status        = EXCLUDED.status,
-           issued_at     = EXCLUDED.issued_at,
-           approved_by   = EXCLUDED.approved_by,
-           letter_text   = EXCLUDED.letter_text,
-           updated_at    = NOW()`,
-        [
+    // ⚡ Bolt Optimization: Batch insert preservation requests
+    if (tip.preservation_requests.length > 0) {
+      const prValues: unknown[] = [];
+      const prPlaceholders: string[] = [];
+      let pIdx = 1;
+
+      for (const pr of tip.preservation_requests) {
+        prPlaceholders.push(`(
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++},
+          $${pIdx++}, $${pIdx++}, $${pIdx++}
+        )`);
+
+        prValues.push(
           pr.request_id,
           tip.tip_id,
           pr.esp_name,
@@ -192,8 +207,24 @@ export async function upsertTip(tip: CyberTip): Promise<void> {
           pr.status,
           pr.auto_generated,
           pr.approved_by ?? null,
-          pr.letter_text ?? null,
-        ]
+          pr.letter_text ?? null
+        );
+      }
+
+      await client.query(
+        `INSERT INTO preservation_requests (
+           request_id, tip_id, esp_name, account_identifiers, legal_basis,
+           jurisdiction, issued_at, deadline_for_esp_response,
+           esp_retention_window_days, status, auto_generated,
+           approved_by, letter_text
+         ) VALUES ${prPlaceholders.join(", ")}
+         ON CONFLICT (request_id) DO UPDATE SET
+           status        = EXCLUDED.status,
+           issued_at     = EXCLUDED.issued_at,
+           approved_by   = EXCLUDED.approved_by,
+           letter_text   = EXCLUDED.letter_text,
+           updated_at    = NOW()`,
+        prValues
       );
     }
 
