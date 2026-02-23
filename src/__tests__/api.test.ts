@@ -10,6 +10,7 @@ import express from "express";
 import request from "supertest";
 import { mountApiRoutes } from "../api/routes.js";
 import { mountSetupRoutes } from "../api/setup_routes.js";
+import { mountIngestionRoutes } from "../ingestion/routes.js";
 
 // ── Test app setup ────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ function buildTestApp() {
   app.use(express.json());
   mountApiRoutes(app);
   mountSetupRoutes(app);
+  mountIngestionRoutes(app);
   return app;
 }
 

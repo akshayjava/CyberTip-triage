@@ -12,6 +12,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { enqueueTip } from "./queue.js";
 import type { TipSource } from "../models/index.js";
 import { publicIntakeLimiter } from "../middleware/rate-limit.js";
+import { getAgencyByKey } from "../db/agencies.js";
 
 // ── Signature verification middleware ─────────────────────────────────────────
 
@@ -50,26 +51,33 @@ function verifyHmacSignature(secret: string): RequestHandler {
 }
 
 function verifyAgencyApiKey(): RequestHandler {
-  return (req: Request, res: Response, next: () => void) => {
-    const apiKey = req.headers["x-agency-key"] as string | undefined;
-    const agencyName = req.headers["x-agency-name"] as string | undefined;
+  return async (req: Request, res: Response, next: () => void) => {
+    try {
+      const apiKey = req.headers["x-agency-key"] as string | undefined;
+      const agencyName = req.headers["x-agency-name"] as string | undefined;
 
-    if (!apiKey || !agencyName) {
-      res.status(401).json({ error: "Missing agency credentials" });
-      return;
+      if (!apiKey || !agencyName) {
+        res.status(401).json({ error: "Missing agency credentials" });
+        return;
+      }
+
+      const agency = await getAgencyByKey(apiKey);
+      if (!agency || agency.status !== "active") {
+        res.status(403).json({ error: "Unauthorized agency" });
+        return;
+      }
+
+      // Attach agency name to request for downstream use
+      // If purely env-configured, allow header name override for backward compat
+      if (agency.name === "Env-Configured Agency") {
+        (req as Request & { agencyName: string }).agencyName = agencyName;
+      } else {
+        (req as Request & { agencyName: string }).agencyName = agency.name;
+      }
+      next();
+    } catch (err) {
+      next(err);
     }
-
-    // TODO: Validate against agency key registry
-    // For now: check against env-configured keys
-    const validKeys = (process.env["INTER_AGENCY_API_KEYS"] ?? "").split(",");
-    if (!validKeys.includes(apiKey)) {
-      res.status(403).json({ error: "Unauthorized agency" });
-      return;
-    }
-
-    // Attach agency name to request for downstream use
-    (req as Request & { agencyName: string }).agencyName = agencyName;
-    next();
   };
 }
 
