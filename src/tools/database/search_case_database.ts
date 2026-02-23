@@ -64,6 +64,7 @@ async function searchCaseDatabaseReal(
   fuzzy: boolean = false,
   dateRangeDays: number = 365
 ): Promise<CaseSearchResponse> {
+  // Implementation using PostgreSQL + pg-trgm for fuzzy matching
   const pool = getPool();
   const sinceInterval = `${Math.max(1, Math.floor(dateRangeDays))} days`;
 
