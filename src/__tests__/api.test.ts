@@ -17,6 +17,12 @@ import { mountIngestionRoutes } from "../ingestion/routes.js";
 function buildTestApp() {
   const app = express();
   app.use(express.json());
+  // Mock session for requireRole middleware used in setup routes
+  app.use((req, res, next) => {
+    // @ts-expect-error - Mocking session
+    req.session = { role: "admin" };
+    next();
+  });
   mountApiRoutes(app);
   mountSetupRoutes(app);
   mountIngestionRoutes(app);

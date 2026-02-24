@@ -14,6 +14,7 @@ import { writeFile, access, readdir, stat } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
+import { requireRole } from "../auth/middleware.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../../");
@@ -58,7 +59,7 @@ export function mountSetupRoutes(app: Application): void {
   });
 
   // ── Setup wizard — save configuration ────────────────────────────────────
-  app.post("/api/setup/save", async (req: Request, res: Response) => {
+  app.post("/api/setup/save", requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const config = req.body as SetupConfig;
       const validation = validateSetupConfig(config);
