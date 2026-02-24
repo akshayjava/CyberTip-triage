@@ -11,6 +11,17 @@ import type { Reporter } from "../models/index.js";
 
 // ── Lightweight XML value extractor (no external dep needed for known schema) ─
 
+const regexCache = new Map<string, RegExp>();
+
+function getCachedRegex(key: string, source: string, flags: string): RegExp {
+  let regex = regexCache.get(key);
+  if (!regex) {
+    regex = new RegExp(source, flags);
+    regexCache.set(key, regex);
+  }
+  return regex;
+}
+
 /**
  * Helper to handle XML edge cases like CDATA and comments by using placeholders
  * before applying regex matching. This prevents brittleness when tags appear
@@ -49,7 +60,11 @@ function withPlaceholders<T>(
 
 function xmlText(xml: string, tag: string): string | undefined {
   return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = new RegExp(`<${tag}(?![a-zA-Z0-9])([^>]*)>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const pattern = getCachedRegex(
+      `text:${tag}`,
+      `<${tag}(?![a-zA-Z0-9])([^>]*)>([\\s\\S]*?)<\\/${tag}>`,
+      "i"
+    );
     const m = pattern.exec(safeXml);
     return m ? restore(m[2]).trim() || undefined : undefined;
   });
@@ -57,7 +72,8 @@ function xmlText(xml: string, tag: string): string | undefined {
 
 function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
   return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = new RegExp(
+    const pattern = getCachedRegex(
+      `attr:${tag}:${attr}`,
       `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}=(?:"([^"]*)"|'([^']*)')`,
       "i"
     );
@@ -68,10 +84,12 @@ function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
 
 export function xmlAll(xml: string, tag: string): string[] {
   return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = new RegExp(
+    const pattern = getCachedRegex(
+      `all:${tag}`,
       `<${tag}(?![a-zA-Z0-9])[^>]*>[\\s\\S]*?<\\/${tag}>`,
       "gi"
     );
+    pattern.lastIndex = 0; // Reset state for global regex reused from cache
     return [...safeXml.matchAll(pattern)].map((m) => restore(m[0], false));
   });
 }
