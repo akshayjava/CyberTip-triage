@@ -497,16 +497,6 @@ function TipDetailSheet({ tip, onClose, onRefresh }) {
                     {blocked && f.warrant_required && (
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span style={{color:'var(--muted)'}}>Warrant: {f.warrant_status}</span>
-                        {f.warrant_status === 'pending_application' && (
-                          <button
-                            onClick={() => updateWarrant(f.file_id, 'applied')}
-                            disabled={!!actionLoading}
-                            className="tap rounded px-2 py-1 text-xs"
-                            style={{background:'rgba(29,78,216,0.5)',color:'#93c5fd',minHeight:32}}
-                          >
-                            Mark Applied
-                          </button>
-                        )}
                         {f.warrant_status === 'applied' && (
                           <>
                             <button
