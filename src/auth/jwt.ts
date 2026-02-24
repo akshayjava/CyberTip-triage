@@ -23,6 +23,7 @@ import {
   recordLogin,
   revokeJTI,
   isJTIRevoked,
+  updatePasswordHash,
 } from "../db/officers.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ if (!SECRET) {
 const TOKEN_TTL       = 8 * 60 * 60;       // 8 hours in seconds
 const INACTIVITY_TTL  = 30 * 60 * 1000;    // 30 min in ms (CJIS § 5.6.2.1)
 
-const PBKDF2_ITERS  = 100_000;
+const PBKDF2_ITERS  = 600_000;
 const PBKDF2_KEYLEN = 32;
 const SALT_LEN      = 16;
 
@@ -146,6 +147,16 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
 
   if (!verifyPassword(req.password, officer.password_hash)) {
     throw new AuthError("Invalid badge number or password");
+  }
+
+  // Auto-upgrade hash if iterations are below current default
+  const hashParts = officer.password_hash.split(":");
+  if (hashParts.length === 4 && hashParts[0] === "pbkdf2") {
+    const iters = parseInt(hashParts[1], 10);
+    if (!isNaN(iters) && iters < PBKDF2_ITERS) {
+      const newHash = hashPassword(req.password);
+      await updatePasswordHash(officer.officer_id, newHash);
+    }
   }
 
   await recordLogin(officer.officer_id);
