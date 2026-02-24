@@ -28,7 +28,7 @@
 
 import { runTool, type ToolResult } from "../types.js";
 import { createHash } from "crypto";
-import { readFileSync } from "fs";
+import { readFile } from "fs/promises";
 import { request as httpsRequest } from "https";
 
 export interface WatchlistResult {
@@ -142,6 +142,18 @@ function photoDNAKey(hash: string): string {
   return createHash("sha256").update(normaliseHash(hash)).digest("hex");
 }
 
+const fileCache = new Map<string, Promise<Buffer>>();
+
+/** Helper to get cached file content (async) to avoid redundant blocking I/O */
+function getCachedFile(path: string): Promise<Buffer> {
+  let promise = fileCache.get(path);
+  if (!promise) {
+    promise = readFile(path);
+    fileCache.set(path, promise);
+  }
+  return promise;
+}
+
 // Project VIC — mTLS REST API
 async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
   const endpoint = process.env["PROJECT_VIC_ENDPOINT"];
@@ -156,8 +168,11 @@ async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
   }
 
   // mTLS requires Node's https module with client certs
-  const cert = readFileSync(certPath);
-  const key  = readFileSync(keyPath);
+  // Optimized: Use async read with caching to avoid event loop blocking
+  const [cert, key] = await Promise.all([
+    getCachedFile(certPath),
+    getCachedFile(keyPath)
+  ]);
   const url  = new URL(`/api/v2/hash/lookup`, endpoint);
 
   const responseBody: string = await new Promise((resolve, reject) => {
