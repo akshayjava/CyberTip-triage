@@ -34,6 +34,9 @@ import { generateMLATRequest, tipNeedsMLAT } from "../tools/legal/mlat_generator
 import { saveMLATRequest, listMLATRequests } from "../db/mlat.js";
 import { circuitLegalSummary, getCircuitForState, PRECEDENT_LOG } from "../compliance/circuit_guide.js";
 import { runClusterScan } from "../jobs/cluster_scan.js";
+import { generateForensicsHandoff } from "../tools/forensics/forensics_handoff.js";
+import { saveForensicsHandoff, listForensicsHandoffs, updateHandoffStatus } from "../db/forensics.js";
+import { ForensicsPlatformSchema } from "../models/forensics.js";
 
 // Wrap async handlers so unhandled rejections surface as 500s
 function wrapAsync(
@@ -318,6 +321,94 @@ async function handleAddPrecedent(req: Request, res: Response): Promise<void> {
   });
 }
 
+// POST /api/tips/:id/forensics — Generate a forensics handoff package
+async function handleGenerateForensicsHandoff(req: Request, res: Response): Promise<void> {
+  const tipId = req.params["id"] ?? "";
+  const { platform, generated_by } = req.body as { platform?: string; generated_by?: string };
+
+  if (!platform) { res.status(400).json({ error: "platform required" }); return; }
+  if (!generated_by) { res.status(400).json({ error: "generated_by required" }); return; }
+
+  const parsed = ForensicsPlatformSchema.safeParse(platform.toUpperCase());
+  if (!parsed.success) {
+    res.status(400).json({
+      error: `Invalid platform. Must be one of: ${ForensicsPlatformSchema.options.join(", ")}`,
+    });
+    return;
+  }
+
+  const tip = await dbGetTipById(tipId);
+  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  if (!tip.classification || !tip.priority) {
+    res.status(409).json({ error: "Tip has not completed triage pipeline — cannot generate handoff" });
+    return;
+  }
+
+  const result = await generateForensicsHandoff(tip, parsed.data, generated_by);
+  await saveForensicsHandoff(result.handoff);
+
+  await appendAuditEntry({
+    tip_id: tipId,
+    agent: "ForensicsHandoff",
+    timestamp: new Date().toISOString(),
+    status: "success",
+    summary: `Forensics handoff generated for ${parsed.data} by ${generated_by}. Files: ${result.handoff.files_included} included, ${result.handoff.files_blocked_wilson} blocked (Wilson).`,
+    human_actor: generated_by,
+    new_value: { handoff_id: result.handoff.handoff_id, platform: parsed.data },
+  });
+
+  res.json({
+    handoff: result.handoff,
+    exports: result.exports,
+    context_summary: {
+      offense_category: result.context.offense_category,
+      severity: result.context.severity_us_icac,
+      priority_score: result.context.priority_score,
+      files_included: result.context.accessible_file_count,
+      files_blocked_wilson: tip.files.length - result.context.accessible_file_count,
+    },
+  });
+}
+
+// GET /api/tips/:id/forensics — List handoffs for a tip
+async function handleListTipForensicsHandoffs(req: Request, res: Response): Promise<void> {
+  const tipId = req.params["id"] ?? "";
+  const tip = await dbGetTipById(tipId);
+  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  const handoffs = await listForensicsHandoffs(tipId);
+  res.json(handoffs);
+}
+
+// GET /api/forensics/handoffs — List all handoffs (global view)
+async function handleListAllForensicsHandoffs(req: Request, res: Response): Promise<void> {
+  const limit = Math.min(parseInt((req.query["limit"] as string) ?? "100", 10), 500);
+  const handoffs = await listForensicsHandoffs(undefined, limit);
+  res.json(handoffs);
+}
+
+// PATCH /api/forensics/handoffs/:handoffId/status — Update handoff status
+async function handleUpdateForensicsStatus(req: Request, res: Response): Promise<void> {
+  const handoffId = req.params["handoffId"] ?? "";
+  const { status, notes } = req.body as { status?: string; notes?: string };
+
+  const validStatuses = ["pending", "delivered", "imported", "completed"];
+  if (!status || !validStatuses.includes(status)) {
+    res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+    return;
+  }
+
+  const updated = await updateHandoffStatus(
+    handoffId,
+    status as import("../models/forensics.js").ForensicsHandoffStatus,
+    notes
+  );
+  if (!updated) { res.status(404).json({ error: "Handoff not found" }); return; }
+
+  res.json({ success: true, handoff: updated });
+}
+
 async function handleGetLLMConfig(_req: Request, res: Response): Promise<void> {
   const { getLLMConfigSummary } = await import("../llm/index.js");
   res.json(getLLMConfigSummary());
@@ -385,6 +476,11 @@ export function mountApiRoutes(app: Application): void {
   app.get("/api/legal/precedents", wrapAsync(handlePrecedentLog));
   app.post("/api/legal/precedents", wrapAsync(handleAddPrecedent));
   app.get("/api/warrant-applications/:id/:fileId/affidavit", wrapAsync(handleGetAffidavit));
+  // Forensics handoff endpoints
+  app.post("/api/tips/:id/forensics", wrapAsync(handleGenerateForensicsHandoff));
+  app.get("/api/tips/:id/forensics", wrapAsync(handleListTipForensicsHandoffs));
+  app.get("/api/forensics/handoffs", wrapAsync(handleListAllForensicsHandoffs));
+  app.patch("/api/forensics/handoffs/:handoffId/status", wrapAsync(handleUpdateForensicsStatus));
   console.log("[ROUTES] API routes mounted at /api/*");
 }
 
