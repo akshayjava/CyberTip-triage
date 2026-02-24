@@ -474,6 +474,15 @@
     <div class="step-item" id="nav-6" onclick="goTo(6)">
       <div class="step-num">6</div>
       <div>
+        <div class="step-label">Forensics Tools</div>
+        <div class="step-sub">Workstation software in use</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="step-item" id="nav-7" onclick="goTo(7)">
+      <div class="step-num">7</div>
+      <div>
         <div class="step-label">Confirm & Save</div>
         <div class="step-sub">Review and apply settings</div>
       </div>
@@ -820,14 +829,88 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" onclick="goTo(6)">Review & Save →</button>
+        <button class="btn btn-primary" onclick="goTo(6)">Continue →</button>
         <button class="btn btn-secondary" onclick="goTo(4)">← Back</button>
       </div>
     </div>
 
-    <!-- Step 6: Confirm -->
+    <!-- Step 6: Forensics Tools -->
     <div class="step-panel" id="step-6">
-      <div class="step-heading">Step 6 of 6</div>
+      <div class="step-heading">Step 6 of 7</div>
+      <h2 class="step-title">Forensics Tools</h2>
+      <p class="step-desc">Select the forensic analysis platforms your task force has deployed. Only the selected tools will be available in the Forensics Handoff interface. Investigators cannot export to an unconfigured platform.</p>
+
+      <div class="info-box" style="margin-bottom:24px">
+        <div class="info-title">Why this matters</div>
+        <div class="info-body">This limits available export formats to tools your agency actually has licensed and deployed, preventing investigators from generating packages for software they can't open. You can update this list at any time by re-running setup or editing <code style="background:#0a0e18;padding:1px 5px">.env</code>.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px">
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-GRIFFEYE" onclick="toggleForensicsTool('GRIFFEYE')">
+          <input type="checkbox" id="ft-GRIFFEYE" style="margin-top:3px;flex-shrink:0" checked/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">Griffeye Analyze DI</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">The most widely deployed ICAC triage tool. Exports a Project VIC JSON hash set and a Griffeye Case CSV. <strong style="color:var(--green)">Recommended for all ICAC task forces.</strong></div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-AXIOM" onclick="toggleForensicsTool('AXIOM')">
+          <input type="checkbox" id="ft-AXIOM" style="margin-top:3px;flex-shrink:0"/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">Magnet AXIOM / Magnet REVIEW</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">Exports a JSON case manifest loadable via AXIOM Connect. Covers both AXIOM Process and REVIEW cloud review.</div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-FTK" onclick="toggleForensicsTool('FTK')">
+          <input type="checkbox" id="ft-FTK" style="margin-top:3px;flex-shrink:0"/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">AccessData FTK / FTK Imager</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">Exports an FTK Case XML and a Known File Filter (KFF) hash library for automatic flagging during acquisition.</div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-CELLEBRITE" onclick="toggleForensicsTool('CELLEBRITE')">
+          <input type="checkbox" id="ft-CELLEBRITE" style="margin-top:3px;flex-shrink:0"/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">Cellebrite UFED / Inspector</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">Used for mobile device acquisition and analysis. Exports a UFDR-style manifest and hash CSV for cross-referencing extracted device data.</div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-ENCASE" onclick="toggleForensicsTool('ENCASE')">
+          <input type="checkbox" id="ft-ENCASE" style="margin-top:3px;flex-shrink:0"/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">OpenText EnCase</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">Exports an EnCase Case XML, a pre-built bookmark CSV for flagged files, and an EnScript-ready JSON for custom workflows.</div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;padding:16px;background:var(--surface);border:1.5px solid var(--border2);cursor:pointer;transition:border-color 0.2s" id="ft-card-GENERIC">
+          <input type="checkbox" id="ft-GENERIC" style="margin-top:3px;flex-shrink:0" checked disabled/>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:#e8f4ff;margin-bottom:4px">Generic JSON <span style="font-size:10px;color:var(--muted);font-weight:400">(always enabled)</span></div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5">A structured JSON export compatible with any tool that accepts case metadata. Always available as a fallback.</div>
+          </div>
+        </label>
+
+      </div>
+
+      <div id="ft-none-warning" class="info-box warn" style="display:none;margin-bottom:16px">
+        <div class="info-title">⚠ No tools selected</div>
+        <div class="info-body">Select at least one forensics platform. Generic JSON will always be available regardless.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goTo(7)">Review & Save →</button>
+        <button class="btn btn-secondary" onclick="goTo(5)">← Back</button>
+      </div>
+    </div>
+
+    <!-- Step 7: Confirm -->
+    <div class="step-panel" id="step-7">
+      <div class="step-heading">Step 7 of 7</div>
       <h2 class="step-title">Review & Save</h2>
       <p class="step-desc">Review your settings before saving. The configuration will be written to your <code style="background:var(--surface);padding:2px 6px">.env</code> file.</p>
 
@@ -843,6 +926,7 @@
         <tr><td>Project VIC</td><td id="sum-vic">—</td></tr>
         <tr><td>IWF</td><td id="sum-iwf">—</td></tr>
         <tr><td>De-Confliction</td><td id="sum-decon">—</td></tr>
+        <tr><td>Forensics Tools</td><td id="sum-forensics">—</td></tr>
       </table>
 
       <div class="status-list" id="validation-list">
@@ -865,7 +949,7 @@
 
       <div class="btn-row">
         <button class="btn btn-primary" id="save-btn" onclick="saveConfig()">Save Configuration</button>
-        <button class="btn btn-secondary" onclick="goTo(5)">← Back</button>
+        <button class="btn btn-secondary" onclick="goTo(6)">← Back</button>
       </div>
 
       <!-- Success state -->
@@ -890,7 +974,7 @@
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentStep = 0;
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 function goTo(step) {
   document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
@@ -907,7 +991,31 @@ function goTo(step) {
   document.getElementById('progress').style.width = (step / TOTAL_STEPS * 100) + '%';
   currentStep = step;
 
-  if (step === 6) populateSummary();
+  if (step === 7) populateSummary();
+}
+
+// ── Forensics tool toggle ─────────────────────────────────────────────────────
+function toggleForensicsTool(platform) {
+  const cb = document.getElementById('ft-' + platform);
+  const card = document.getElementById('ft-card-' + platform);
+  // checkbox click is handled by the label naturally; update card border
+  setTimeout(() => {
+    card.style.borderColor = cb.checked ? 'var(--accent)' : 'var(--border2)';
+    card.style.background = cb.checked ? 'rgba(45,140,240,0.07)' : 'var(--surface)';
+    // Show warning if nothing selected
+    const anySelected = ['GRIFFEYE','AXIOM','FTK','CELLEBRITE','ENCASE'].some(
+      p => document.getElementById('ft-' + p).checked
+    );
+    document.getElementById('ft-none-warning').style.display = anySelected ? 'none' : 'block';
+  }, 0);
+}
+
+function getEnabledForensicsTools() {
+  const platforms = ['GRIFFEYE','AXIOM','FTK','CELLEBRITE','ENCASE','GENERIC'];
+  return platforms.filter(p => {
+    const el = document.getElementById('ft-' + p);
+    return el && el.checked;
+  });
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -953,6 +1061,10 @@ function populateSummary() {
   document.getElementById('sum-vic').textContent = document.getElementById('vicKey').value ? '✓ Configured' : 'Not configured';
   document.getElementById('sum-iwf').textContent = document.getElementById('iwfKey').value ? '✓ Configured' : 'Not configured';
   document.getElementById('sum-decon').textContent = document.getElementById('deconKey').value ? '✓ Configured' : 'Not configured';
+  const enabledTools = getEnabledForensicsTools();
+  document.getElementById('sum-forensics').textContent = enabledTools.length > 0
+    ? enabledTools.join(', ')
+    : 'GENERIC (default)';
 
   // Validation
   const keyValid = apiKey.startsWith('sk-ant-') && apiKey.length > 30;
@@ -991,6 +1103,7 @@ async function saveConfig() {
     vicKey: document.getElementById('vicKey').value,
     iwfKey: document.getElementById('iwfKey').value,
     deconKey: document.getElementById('deconKey').value,
+    forensicsTools: getEnabledForensicsTools(),
   };
 
   const btn = document.getElementById('save-btn');
@@ -1083,6 +1196,11 @@ VPN_PORTAL_SECRET=${Math.random().toString(36).slice(2)+Math.random().toString(3
 ${c.vicKey ? `PROJECT_VIC_API_KEY=${c.vicKey}` : `# PROJECT_VIC_API_KEY=`}
 ${c.iwfKey ? `IWF_API_KEY=${c.iwfKey}` : `# IWF_API_KEY=`}
 ${c.deconKey ? `RISSAFE_API_KEY=${c.deconKey}` : `# RISSAFE_API_KEY=`}
+
+# ── Forensics Tool Handoff ────────────────────────────────────────────────────
+# Platforms with licensed deployments at this agency. Only these tools appear
+# in the Forensics Handoff interface. GENERIC is always available.
+FORENSICS_ENABLED_PLATFORMS=${(c.forensicsTools && c.forensicsTools.length > 0) ? c.forensicsTools.join(',') : 'GENERIC'}
 `;
 }
 

@@ -40,7 +40,7 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
 
-const PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"];
+const ALL_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"];
 
 const PLATFORM_DESCRIPTIONS = {
   GRIFFEYE:   "Griffeye Analyze DI — Project VIC JSON + Case CSV (dominant ICAC triage tool)",
@@ -70,13 +70,20 @@ function Nav() {
   );
 }
 
-function GenerateHandoffPanel({ onHandoffCreated }) {
+function GenerateHandoffPanel({ onHandoffCreated, enabledPlatforms }) {
   const [tipId, setTipId] = useState("");
-  const [platform, setPlatform] = useState("GRIFFEYE");
+  const [platform, setPlatform] = useState(enabledPlatforms[0] ?? "GENERIC");
   const [generatedBy, setGeneratedBy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+
+  // Reset to first enabled platform if current selection becomes unavailable
+  useEffect(() => {
+    if (!enabledPlatforms.includes(platform)) {
+      setPlatform(enabledPlatforms[0] ?? "GENERIC");
+    }
+  }, [enabledPlatforms]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -133,7 +140,7 @@ function GenerateHandoffPanel({ onHandoffCreated }) {
               onChange={e => setPlatform(e.target.value)}
               className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm border border-slate-600 focus:border-blue-500 focus:outline-none"
             >
-              {PLATFORMS.map(p => (
+              {enabledPlatforms.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
@@ -303,6 +310,21 @@ function HandoffTable({ handoffs, onStatusUpdate }) {
 function App() {
   const [handoffs, setHandoffs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [enabledPlatforms, setEnabledPlatforms] = useState(ALL_PLATFORMS);
+  const [platformsLoaded, setPlatformsLoaded] = useState(false);
+
+  // Load agency-configured platforms on mount
+  useEffect(() => {
+    fetch("/api/forensics/platforms")
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.enabled) && data.enabled.length > 0) {
+          setEnabledPlatforms(data.enabled);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPlatformsLoaded(true));
+  }, []);
 
   const loadHandoffs = useCallback(async () => {
     try {
@@ -351,7 +373,17 @@ function App() {
           and counted in "Blocked (Wilson)". This enforcement cannot be overridden.
         </div>
 
-        <GenerateHandoffPanel onHandoffCreated={loadHandoffs} />
+        {!platformsLoaded ? null : (
+          enabledPlatforms.length < ALL_PLATFORMS.length && (
+            <div className="mb-4 bg-slate-800 border border-slate-700 rounded px-4 py-2 text-xs text-slate-400">
+              <strong className="text-slate-300">Agency-configured tools:</strong>{" "}
+              {enabledPlatforms.join(", ")}.{" "}
+              Other platforms were not selected during setup.{" "}
+              <a href="/setup" className="text-blue-400 hover:text-blue-300">Update in Setup</a>
+            </div>
+          )
+        )}
+        <GenerateHandoffPanel onHandoffCreated={loadHandoffs} enabledPlatforms={enabledPlatforms} />
 
         <div className="bg-slate-800 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">

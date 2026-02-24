@@ -321,6 +321,23 @@ async function handleAddPrecedent(req: Request, res: Response): Promise<void> {
   });
 }
 
+// GET /api/forensics/platforms — Return the platforms enabled at this agency
+async function handleGetForensicsPlatforms(_req: Request, res: Response): Promise<void> {
+  const raw = process.env["FORENSICS_ENABLED_PLATFORMS"] ?? "";
+  const all: string[] = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"];
+
+  let enabled: string[];
+  if (raw.trim() === "") {
+    // No env var set — all platforms available (dev / unconfigured)
+    enabled = all;
+  } else {
+    enabled = raw.split(",").map((s) => s.trim().toUpperCase()).filter((s) => all.includes(s));
+    if (!enabled.includes("GENERIC")) enabled.push("GENERIC");
+  }
+
+  res.json({ enabled, all });
+}
+
 // POST /api/tips/:id/forensics — Generate a forensics handoff package
 async function handleGenerateForensicsHandoff(req: Request, res: Response): Promise<void> {
   const tipId = req.params["id"] ?? "";
@@ -335,6 +352,19 @@ async function handleGenerateForensicsHandoff(req: Request, res: Response): Prom
       error: `Invalid platform. Must be one of: ${ForensicsPlatformSchema.options.join(", ")}`,
     });
     return;
+  }
+
+  // Enforce agency-configured platform allowlist
+  const rawEnabled = process.env["FORENSICS_ENABLED_PLATFORMS"] ?? "";
+  if (rawEnabled.trim() !== "") {
+    const enabled = rawEnabled.split(",").map((s) => s.trim().toUpperCase());
+    if (!enabled.includes("GENERIC")) enabled.push("GENERIC");
+    if (!enabled.includes(parsed.data)) {
+      res.status(403).json({
+        error: `Platform "${parsed.data}" is not enabled for this agency. Enabled: ${enabled.join(", ")}`,
+      });
+      return;
+    }
   }
 
   const tip = await dbGetTipById(tipId);
@@ -477,6 +507,7 @@ export function mountApiRoutes(app: Application): void {
   app.post("/api/legal/precedents", wrapAsync(handleAddPrecedent));
   app.get("/api/warrant-applications/:id/:fileId/affidavit", wrapAsync(handleGetAffidavit));
   // Forensics handoff endpoints
+  app.get("/api/forensics/platforms", wrapAsync(handleGetForensicsPlatforms));
   app.post("/api/tips/:id/forensics", wrapAsync(handleGenerateForensicsHandoff));
   app.get("/api/tips/:id/forensics", wrapAsync(handleListTipForensicsHandoffs));
   app.get("/api/forensics/handoffs", wrapAsync(handleListAllForensicsHandoffs));
