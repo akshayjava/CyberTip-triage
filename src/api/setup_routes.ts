@@ -199,6 +199,8 @@ interface SetupConfig {
   vicKey?: string;
   iwfKey?: string;
   deconKey?: string;
+  /** Forensics platform identifiers enabled at this agency (e.g. ["GRIFFEYE","FTK"]). GENERIC always included. */
+  forensicsTools?: string[];
 }
 
 interface ValidationResult {
@@ -308,7 +310,24 @@ ${c.vicKey ? `PROJECT_VIC_API_KEY=${c.vicKey}` : `# PROJECT_VIC_API_KEY=`}
 ${c.iwfKey ? `IWF_API_KEY=${c.iwfKey}` : `# IWF_API_KEY=`}
 ${c.deconKey ? `RISSAFE_API_KEY=${c.deconKey}` : `# RISSAFE_API_KEY=`}
 # INTERPOL_ICSE_KEY=
+
+# ── Forensics Tool Handoff ─────────────────────────────────────────────────────
+# Platforms licensed and deployed at this agency. Only these appear in the
+# Forensics Handoff UI. GENERIC is always available as a fallback.
+FORENSICS_ENABLED_PLATFORMS=${buildForensicsPlatformsValue(c.forensicsTools)}
 `;
+}
+
+const VALID_FORENSICS_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"] as const;
+
+function buildForensicsPlatformsValue(tools?: string[]): string {
+  const selected = (tools ?? [])
+    .map((t) => t.toUpperCase())
+    .filter((t) => (VALID_FORENSICS_PLATFORMS as readonly string[]).includes(t));
+
+  // GENERIC is always included
+  if (!selected.includes("GENERIC")) selected.push("GENERIC");
+  return selected.join(",");
 }
 
 function generateSecret(length = 32): string {

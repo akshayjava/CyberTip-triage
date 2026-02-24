@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forensics Handoff — CyberTip Triage</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" />
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: 'SF Pro Display', system-ui, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .status-pending   { color: #94a3b8; }
+    .status-delivered { color: #60a5fa; }
+    .status-imported  { color: #a78bfa; }
+    .status-completed { color: #4ade80; }
+    .platform-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .platform-GRIFFEYE  { background: #1e3a5f; color: #93c5fd; }
+    .platform-AXIOM     { background: #2d1b69; color: #c4b5fd; }
+    .platform-FTK       { background: #1c3a1c; color: #86efac; }
+    .platform-CELLEBRITE{ background: #3a1c1c; color: #fca5a5; }
+    .platform-ENCASE    { background: #3a2e1c; color: #fcd34d; }
+    .platform-GENERIC   { background: #1f2937; color: #9ca3af; }
+    pre { font-family: 'SF Mono', 'Cascadia Code', monospace; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const ALL_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"];
+
+const PLATFORM_DESCRIPTIONS = {
+  GRIFFEYE:   "Griffeye Analyze DI — Project VIC JSON + Case CSV (dominant ICAC triage tool)",
+  AXIOM:      "Magnet AXIOM / Magnet REVIEW — JSON case manifest (AXIOM Connect)",
+  FTK:        "AccessData FTK / FTK Imager — Case XML + KFF hash library",
+  CELLEBRITE: "Cellebrite UFED / Inspector — UFDR manifest + hash CSV",
+  ENCASE:     "OpenText EnCase — Case XML + bookmarks + EnScript JSON",
+  GENERIC:    "Generic JSON bundle — any tool accepting structured input",
+};
+
+function StatusBadge({ status }) {
+  const labels = { pending: "Pending", delivered: "Delivered", imported: "Imported", completed: "Completed" };
+  return <span className={`status-${status} font-semibold`}>{labels[status] ?? status}</span>;
+}
+
+function PlatformBadge({ platform }) {
+  return <span className={`platform-badge platform-${platform}`}>{platform}</span>;
+}
+
+function Nav() {
+  return (
+    <nav className="flex items-center gap-6 px-6 py-3 border-b border-slate-700 text-sm">
+      <a href="/dashboard" className="text-slate-400 hover:text-white transition-colors">← Queue</a>
+      <span className="text-white font-semibold">Forensics Handoff</span>
+      <a href="/dashboard/tier4.html" className="text-slate-400 hover:text-white transition-colors ml-auto">Admin</a>
+    </nav>
+  );
+}
+
+function GenerateHandoffPanel({ onHandoffCreated, enabledPlatforms }) {
+  const [tipId, setTipId] = useState("");
+  const [platform, setPlatform] = useState(enabledPlatforms[0] ?? "GENERIC");
+  const [generatedBy, setGeneratedBy] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  // Reset to first enabled platform if current selection becomes unavailable
+  useEffect(() => {
+    if (!enabledPlatforms.includes(platform)) {
+      setPlatform(enabledPlatforms[0] ?? "GENERIC");
+    }
+  }, [enabledPlatforms]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setResult(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/tips/${tipId.trim()}/forensics`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, generated_by: generatedBy.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unknown error");
+      setResult(data);
+      onHandoffCreated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadFile = (filename, content) => {
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="bg-slate-800 rounded-lg p-6 mb-6">
+      <h2 className="text-lg font-bold mb-4 text-blue-300">Generate Forensics Handoff Package</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 uppercase tracking-wide">Tip ID (UUID)</label>
+            <input
+              type="text"
+              value={tipId}
+              onChange={e => setTipId(e.target.value)}
+              placeholder="e.g. 550e8400-e29b-41d4-..."
+              required
+              className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm border border-slate-600 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 uppercase tracking-wide">Target Platform</label>
+            <select
+              value={platform}
+              onChange={e => setPlatform(e.target.value)}
+              className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm border border-slate-600 focus:border-blue-500 focus:outline-none"
+            >
+              {enabledPlatforms.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">{PLATFORM_DESCRIPTIONS[platform]}</p>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 uppercase tracking-wide">Investigator / Badge ID</label>
+            <input
+              type="text"
+              value={generatedBy}
+              onChange={e => setGeneratedBy(e.target.value)}
+              placeholder="e.g. badge-12345"
+              required
+              className="w-full bg-slate-700 text-white rounded px-3 py-2 text-sm border border-slate-600 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-semibold disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Generating…" : "Generate Handoff Package"}
+          </button>
+          {error && <span className="text-red-400 text-sm">{error}</span>}
+        </div>
+      </form>
+
+      {result && (
+        <div className="mt-6 border-t border-slate-700 pt-5">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-green-400 font-bold text-sm">✓ Handoff Generated</span>
+            <PlatformBadge platform={result.handoff.platform} />
+            <span className="text-xs text-slate-400">ID: {result.handoff.handoff_id.slice(0, 8)}…</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
+            <div className="bg-slate-700 rounded p-3">
+              <div className="text-slate-400">Files Included</div>
+              <div className="text-green-400 font-bold text-lg">{result.handoff.files_included}</div>
+            </div>
+            <div className="bg-slate-700 rounded p-3">
+              <div className="text-slate-400">Blocked (Wilson)</div>
+              <div className="text-red-400 font-bold text-lg">{result.handoff.files_blocked_wilson}</div>
+            </div>
+            <div className="bg-slate-700 rounded p-3">
+              <div className="text-slate-400">Severity</div>
+              <div className="text-yellow-300 font-bold">{result.context_summary.severity}</div>
+            </div>
+            <div className="bg-slate-700 rounded p-3">
+              <div className="text-slate-400">Priority Score</div>
+              <div className="text-blue-300 font-bold text-lg">{result.context_summary.priority_score}</div>
+            </div>
+          </div>
+
+          {result.exports.files && Object.keys(result.exports.files).length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs text-slate-400 mb-2 uppercase tracking-wide">Download Export Files</div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(result.exports.files).map(([filename, content]) => (
+                  <button
+                    key={filename}
+                    onClick={() => downloadFile(filename, content)}
+                    className="bg-slate-700 hover:bg-slate-600 text-blue-300 px-3 py-1.5 rounded text-xs font-mono transition-colors"
+                  >
+                    ↓ {filename}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.exports.instructions && (
+            <details className="mt-3">
+              <summary className="text-xs text-slate-400 cursor-pointer hover:text-white">Import Instructions</summary>
+              <pre className="mt-2 text-xs text-slate-300 bg-slate-900 rounded p-3 overflow-x-auto whitespace-pre-wrap">{result.exports.instructions}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HandoffRow({ handoff, onStatusUpdate }) {
+  const [updating, setUpdating] = useState(false);
+
+  const nextStatus = {
+    pending: "delivered",
+    delivered: "imported",
+    imported: "completed",
+    completed: null,
+  };
+
+  const advanceStatus = async () => {
+    const next = nextStatus[handoff.status];
+    if (!next) return;
+    setUpdating(true);
+    try {
+      await fetch(`/api/forensics/handoffs/${handoff.handoff_id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      onStatusUpdate();
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const next = nextStatus[handoff.status];
+
+  return (
+    <tr className="border-b border-slate-700 hover:bg-slate-750">
+      <td className="py-3 px-4 text-xs font-mono text-slate-400">{handoff.handoff_id.slice(0, 8)}…</td>
+      <td className="py-3 px-4 text-xs font-mono text-slate-300">{handoff.tip_id.slice(0, 8)}…</td>
+      <td className="py-3 px-4"><PlatformBadge platform={handoff.platform} /></td>
+      <td className="py-3 px-4 text-xs"><StatusBadge status={handoff.status} /></td>
+      <td className="py-3 px-4 text-xs text-slate-400">{handoff.generated_by}</td>
+      <td className="py-3 px-4 text-xs text-slate-400">{handoff.files_included} / {handoff.files_included + handoff.files_blocked_wilson}</td>
+      <td className="py-3 px-4 text-xs text-slate-400">{new Date(handoff.generated_at).toLocaleString()}</td>
+      <td className="py-3 px-4">
+        {next && (
+          <button
+            onClick={advanceStatus}
+            disabled={updating}
+            className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1 rounded transition-colors disabled:opacity-50"
+          >
+            Mark {next}
+          </button>
+        )}
+        {!next && <span className="text-xs text-green-600">Done</span>}
+      </td>
+    </tr>
+  );
+}
+
+function HandoffTable({ handoffs, onStatusUpdate }) {
+  if (handoffs.length === 0) {
+    return <p className="text-slate-400 text-sm text-center py-8">No handoffs generated yet.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-slate-400 uppercase tracking-wide border-b border-slate-700">
+            <th className="py-2 px-4">Handoff ID</th>
+            <th className="py-2 px-4">Tip ID</th>
+            <th className="py-2 px-4">Platform</th>
+            <th className="py-2 px-4">Status</th>
+            <th className="py-2 px-4">Generated By</th>
+            <th className="py-2 px-4">Files (incl/total)</th>
+            <th className="py-2 px-4">Generated At</th>
+            <th className="py-2 px-4">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {handoffs.map(h => (
+            <HandoffRow key={h.handoff_id} handoff={h} onStatusUpdate={onStatusUpdate} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function App() {
+  const [handoffs, setHandoffs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [enabledPlatforms, setEnabledPlatforms] = useState(ALL_PLATFORMS);
+  const [platformsLoaded, setPlatformsLoaded] = useState(false);
+
+  // Load agency-configured platforms on mount
+  useEffect(() => {
+    fetch("/api/forensics/platforms")
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.enabled) && data.enabled.length > 0) {
+          setEnabledPlatforms(data.enabled);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPlatformsLoaded(true));
+  }, []);
+
+  const loadHandoffs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/forensics/handoffs?limit=200");
+      const data = await res.json();
+      setHandoffs(Array.isArray(data) ? data : []);
+    } catch {
+      setHandoffs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadHandoffs(); }, [loadHandoffs]);
+
+  const statusCounts = handoffs.reduce((acc, h) => {
+    acc[h.status] = (acc[h.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div className="min-h-screen">
+      <header className="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Forensics Tool Handoff</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Generate Wilson-compliant case packages for Griffeye, AXIOM, FTK, Cellebrite, or EnCase
+          </p>
+        </div>
+        <div className="flex gap-4 text-xs text-center">
+          {["pending","delivered","imported","completed"].map(s => (
+            <div key={s} className="bg-slate-800 rounded px-3 py-2">
+              <div className={`font-bold text-lg status-${s}`}>{statusCounts[s] ?? 0}</div>
+              <div className="text-slate-500 capitalize">{s}</div>
+            </div>
+          ))}
+        </div>
+      </header>
+
+      <Nav />
+
+      <main className="p-6 max-w-7xl mx-auto">
+        <div className="mb-4 bg-amber-900 border border-amber-700 rounded p-3 text-xs text-amber-200">
+          <strong>Wilson Ruling Compliance:</strong> Only files where a warrant has been granted (or is not required)
+          are included in any handoff package. Files requiring an unresolved warrant are automatically excluded
+          and counted in "Blocked (Wilson)". This enforcement cannot be overridden.
+        </div>
+
+        {!platformsLoaded ? null : (
+          enabledPlatforms.length < ALL_PLATFORMS.length && (
+            <div className="mb-4 bg-slate-800 border border-slate-700 rounded px-4 py-2 text-xs text-slate-400">
+              <strong className="text-slate-300">Agency-configured tools:</strong>{" "}
+              {enabledPlatforms.join(", ")}.{" "}
+              Other platforms were not selected during setup.{" "}
+              <a href="/setup" className="text-blue-400 hover:text-blue-300">Update in Setup</a>
+            </div>
+          )
+        )}
+        <GenerateHandoffPanel onHandoffCreated={loadHandoffs} enabledPlatforms={enabledPlatforms} />
+
+        <div className="bg-slate-800 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-blue-300">Handoff History</h2>
+            <button
+              onClick={loadHandoffs}
+              className="text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+          {loading
+            ? <p className="text-slate-400 text-sm text-center py-8">Loading…</p>
+            : <HandoffTable handoffs={handoffs} onStatusUpdate={loadHandoffs} />
+          }
+        </div>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+</script>
+</body>
+</html>
