@@ -212,9 +212,21 @@ function validateSetupConfig(config: SetupConfig): ValidationResult {
   if (!config.agencyName?.trim()) {
     return { valid: false, error: "Agency name is required" };
   }
+  if (/[\r\n"]/.test(config.agencyName)) {
+    return { valid: false, error: "Agency name cannot contain newlines or double quotes" };
+  }
+
   if (!config.agencyState?.trim()) {
     return { valid: false, error: "State is required" };
   }
+  if (/[\r\n"]/.test(config.agencyState)) {
+    return { valid: false, error: "State cannot contain newlines or double quotes" };
+  }
+
+  if (config.contactEmail && /[\r\n"]/.test(config.contactEmail)) {
+    return { valid: false, error: "Contact email cannot contain newlines or double quotes" };
+  }
+
   if (!["docker", "node"].includes(config.mode)) {
     return { valid: false, error: "Mode must be docker or node" };
   }
