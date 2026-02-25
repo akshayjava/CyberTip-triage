@@ -38,6 +38,8 @@ export interface ListTipsOptions {
   crisis_only?: boolean;
   /** Return tips received at or after this ISO timestamp */
   since?: string;
+  /** Filter by bundled status */
+  is_bundled?: boolean;
 }
 
 export interface ListTipsResult {
@@ -287,6 +289,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.status) {
       tips = tips.filter((t) => t.status === opts.status);
     }
+    if (opts.is_bundled !== undefined) {
+      tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
+    }
     if (opts.crisis_only) {
       tips = tips.filter(
         (t) =>
@@ -328,6 +333,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.status) {
     conditions.push(`status = $${paramIdx++}`);
     params.push(opts.status);
+  }
+  if (opts.is_bundled !== undefined) {
+    conditions.push(`is_bundled = $${paramIdx++}`);
+    params.push(opts.is_bundled);
   }
   if (opts.crisis_only) {
     conditions.push(
