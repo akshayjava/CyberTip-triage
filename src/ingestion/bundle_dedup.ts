@@ -106,9 +106,8 @@ const fingerprintCache = new Map<string, string>(); // fingerprint → canonical
 /** Pre-warm the cache from the database at startup */
 export async function warmBundleCache(): Promise<void> {
   try {
-    const { tips } = await listTips({ limit: 5000 });
+    const { tips } = await listTips({ is_bundled: true, limit: 5000 });
     for (const tip of tips) {
-      if (!tip.is_bundled) continue;
       const sig = extractSignature(tip);
       const fp  = bundleFingerprint(sig);
       if (!fingerprintCache.has(fp)) {
@@ -156,10 +155,9 @@ export async function checkBundleDuplicate(incoming: CyberTip): Promise<BundleCh
   }
 
   // Slow path: scan DB for matching fingerprint
-  const { tips } = await listTips({ limit: 5000 });
+  const { tips } = await listTips({ is_bundled: true, limit: 5000 });
   for (const existing of tips) {
     if (existing.tip_id === incoming.tip_id) continue;
-    if (!existing.is_bundled) continue;
 
     const existingSig = extractSignature(existing);
     const existingFp  = bundleFingerprint(existingSig);
@@ -280,8 +278,8 @@ export interface BundleStats {
 }
 
 export async function getBundleStats(): Promise<BundleStats> {
-  const { tips } = await listTips({ limit: 10_000 });
-  const bundles  = tips.filter((t: CyberTip) => t.is_bundled && t.status !== "duplicate");
+  const { tips } = await listTips({ is_bundled: true, limit: 10_000 });
+  const bundles  = tips.filter((t: CyberTip) => t.status !== "duplicate");
 
   let largest: { tip_id: string; count: number } | null = null;
   let totalIncidents = 0;
