@@ -30,7 +30,10 @@
  */
 
 import { randomUUID } from "crypto";
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
 import { runTool, type ToolResult } from "../types.js";
+import { isOfflineMode, getOfflineConfig } from "../../offline/offline_config.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -93,12 +96,25 @@ function isTwilioConfigured(): boolean {
 
 /** Print startup warnings if alert channels are not configured. Called from src/index.ts */
 export function warnIfAlertsUnconfigured(): void {
+  const offline = isOfflineMode();
+
   if (!isEmailConfigured()) {
     console.warn(
       "[ALERTS] ⚠️  Email alerts not configured. Set ALERT_EMAIL_HOST, ALERT_EMAIL_USER, " +
       "ALERT_EMAIL_PASS, ALERT_SUPERVISOR_EMAILS. Alerts will log to console only."
     );
   }
+
+  if (offline) {
+    const cfg = getOfflineConfig();
+    console.log(
+      `[ALERTS] Offline mode: Twilio SMS disabled. Alert mode: ${cfg.alertMode}. ` +
+      `File queue: ${cfg.alertQueuePath}`
+    );
+    // In offline mode, file queue is the safety net — confirm it is writable
+    return; // Skip Twilio warning
+  }
+
   if (!isTwilioConfigured()) {
     console.warn(
       "[ALERTS] ⚠️  SMS alerts not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
@@ -157,9 +173,36 @@ async function sendEmail(opts: {
   });
 }
 
+// ── File-based alert queue (offline mode) ─────────────────────────────────────
+
+async function writeAlertToQueue(payload: {
+  type: string;
+  alert_id: string;
+  timestamp: string;
+  data: unknown;
+}): Promise<void> {
+  const cfg = getOfflineConfig();
+  const dir = cfg.alertQueuePath;
+  try {
+    await mkdir(dir, { recursive: true });
+    const filename = `${payload.timestamp.replace(/[:.]/g, "-")}_${payload.alert_id.slice(0, 8)}_${payload.type}.json`;
+    await writeFile(join(dir, filename), JSON.stringify(payload, null, 2), "utf8");
+    console.log(`[ALERTS] Alert written to queue: ${join(dir, filename)}`);
+  } catch (err) {
+    console.error(`[ALERTS] Failed to write alert to file queue:`, err);
+  }
+}
+
 // ── Twilio SMS (lazy init) ─────────────────────────────────────────────────────
 
 async function sendSms(to: string[], body: string): Promise<void> {
+  // Twilio is a cloud service — disabled in offline/air-gap mode
+  if (isOfflineMode()) {
+    console.log(`[ALERTS] Twilio SMS disabled in offline mode. Would have SMS'd: ${to.join(", ")}`);
+    console.log(`[ALERTS] SMS body: ${body.slice(0, 200)}`);
+    return;
+  }
+
   const cfg = getTwilioConfig();
   if (!cfg.sid) {
     console.log(`[ALERTS] Twilio not configured — would have SMS'd: ${to.join(", ")}`);
@@ -228,17 +271,31 @@ export async function alertSupervisor(
       channels.push("email");
     }
 
+    const alertType = isDeconflictionPause ? "DECONFLICTION_PAUSE" : "SUPERVISOR_ALERT";
+    const now = new Date().toISOString();
     SENT_ALERTS.push({
-      type:      isDeconflictionPause ? "DECONFLICTION_PAUSE" : "SUPERVISOR_ALERT",
+      type:      alertType,
       payload:   { tipId, category, score, recommendedAction, summary },
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     });
     DEDUP_SET.add(dedupKey);
+
+    // In offline mode (or when file queue is configured), write alert to disk
+    const offlineCfg = getOfflineConfig();
+    if (offlineCfg.enabled && (offlineCfg.alertMode === "file" || offlineCfg.alertMode === "both")) {
+      await writeAlertToQueue({
+        type: alertType,
+        alert_id: alertId,
+        timestamp: now,
+        data: { tipId, category, score, recommendedAction, summary, isDeconflictionPause },
+      });
+      channels.push("file_queue");
+    }
 
     return {
       delivered:  true,
       alert_id:   alertId,
-      timestamp:  new Date().toISOString(),
+      timestamp:  now,
       channel:    channels.join("+"),
       recipients,
     };
@@ -300,21 +357,34 @@ export async function sendVictimCrisisAlert(
       channels.push("email");
     }
 
+    const now = new Date().toISOString();
     SENT_ALERTS.push({
       type:      "VICTIM_CRISIS_ALERT",
       payload:   { tipId, victimDescription, crisisIndicators, platform, recommendedAction },
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     });
 
     if (!DEDUP_SET.has(dedupKey)) {
       DEDUP_SET.add(dedupKey);
     }
 
+    // File queue — critical in offline mode where SMS is unavailable
+    const offlineCfg = getOfflineConfig();
+    if (offlineCfg.enabled && (offlineCfg.alertMode === "file" || offlineCfg.alertMode === "both")) {
+      await writeAlertToQueue({
+        type: "VICTIM_CRISIS_ALERT",
+        alert_id: alertId,
+        timestamp: now,
+        data: { tipId, victimDescription, crisisIndicators, platform, recommendedAction },
+      });
+      channels.push("file_queue");
+    }
+
     const allRecipients = [...recipients, ...smsRecipients.map((p) => `SMS:${p}`)];
     return {
       delivered:  true,
       alert_id:   alertId,
-      timestamp:  new Date().toISOString(),
+      timestamp:  now,
       routed_to:  allRecipients,
       channels,
     };

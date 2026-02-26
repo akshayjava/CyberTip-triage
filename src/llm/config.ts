@@ -7,7 +7,11 @@
  * ── Environment variables ──────────────────────────────────────────────────
  *
  * Required:
- *   LLM_PROVIDER=anthropic|openai|gemini|local   (default: anthropic)
+ *   LLM_PROVIDER=anthropic|openai|gemini|local|gemma   (default: anthropic)
+ *
+ * Air-gap / Offline mode:
+ *   OFFLINE_MODE=true    Enforces LLM_PROVIDER=gemma or local. Blocks external
+ *                        network calls via the network guard. See offline_config.ts.
  *
  * API keys (whichever provider you use):
  *   ANTHROPIC_API_KEY=sk-ant-...
@@ -68,6 +72,7 @@
 import type { LLMProvider, ProviderName } from "./types.js";
 import { AnthropicProvider } from "./providers/anthropic_provider.js";
 import { OpenAICompatProvider } from "./providers/openai_compat_provider.js";
+import { GemmaProvider } from "./providers/gemma_provider.js";
 
 // Singleton — created once, reused across all agent calls
 let _provider: LLMProvider | null = null;
@@ -93,6 +98,9 @@ export function getLLMProvider(): LLMProvider {
       break;
     case "local":
       _provider = new OpenAICompatProvider("local");
+      break;
+    case "gemma":
+      _provider = new GemmaProvider();
       break;
     default:
       console.warn(`[LLM] Unknown provider "${providerName}", falling back to anthropic`);
@@ -131,7 +139,7 @@ export function validateLLMConfig(): { ok: boolean; warnings: string[] } {
   if (provider === "gemini" && !process.env["GEMINI_API_KEY"]) {
     warnings.push("LLM_PROVIDER=gemini but GEMINI_API_KEY is not set");
   }
-  if (provider === "local") {
+  if (provider === "local" || provider === "gemma") {
     const base = process.env["LOCAL_LLM_BASE_URL"] ?? "http://localhost:11434/v1";
     console.log(`[LLM] Local LLM endpoint: ${base}`);
     // No API key required for most local servers — just a URL
@@ -160,8 +168,9 @@ export function getLLMConfigSummary(): {
       medium: prov.getModelName("medium"),
       fast:   prov.getModelName("fast"),
     },
-    ...(prov.providerName === "local"
+    ...(prov.providerName === "local" || prov.providerName === "gemma"
       ? { local_base_url: process.env["LOCAL_LLM_BASE_URL"] ?? "http://localhost:11434/v1" }
       : {}),
+    offline_mode: process.env["OFFLINE_MODE"] === "true",
   };
 }

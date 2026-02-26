@@ -30,6 +30,14 @@ import { runTool, type ToolResult } from "../types.js";
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
 import { request as httpsRequest } from "https";
+import { isOfflineMode } from "../../offline/offline_config.js";
+import {
+  lookupHashOffline,
+  isTorExitNode,
+  isKnownVpn,
+  isCryptoBlocked,
+  getStats as getOfflineHashStats,
+} from "./offline_hash_db.js";
 
 export interface WatchlistResult {
   matched: boolean;
@@ -387,6 +395,92 @@ async function checkWatchlistsReal(
   return { matched: false, databases_checked: [], confidence: 1.0, latency_ms: Date.now() - start };
 }
 
+// ── Offline implementation — local hash DB files ──────────────────────────────
+
+async function checkWatchlistsOffline(
+  lookupType: LookupType,
+  value: string,
+  _hashType?: string
+): Promise<WatchlistResult> {
+  const start = Date.now();
+
+  if (lookupType === "tor_exit_node") {
+    const isTor = await isTorExitNode(value);
+    return {
+      matched: isTor,
+      databases_checked: ["Local_TorExitList"],
+      is_tor_exit_node: isTor,
+      confidence: 1.0,
+      latency_ms: Date.now() - start,
+    };
+  }
+
+  if (lookupType === "ip_blocklist") {
+    const isVpn = await isKnownVpn(value);
+    return {
+      matched: isVpn,
+      databases_checked: ["Local_VpnList"],
+      is_known_vpn: isVpn,
+      confidence: 1.0,
+      latency_ms: Date.now() - start,
+    };
+  }
+
+  if (lookupType === "crypto_address") {
+    const isBlocked = await isCryptoBlocked(value);
+    return {
+      matched: isBlocked,
+      databases_checked: ["Local_CryptoBlocklist"],
+      confidence: 1.0,
+      latency_ms: Date.now() - start,
+    };
+  }
+
+  if (["hash_exact", "hash_photodna", "project_vic", "iwf", "interpol_icse"].includes(lookupType)) {
+    const match = await lookupHashOffline(value);
+    const stats = getOfflineHashStats();
+    const dbs = [
+      stats.ncmec_count      > 0 ? "Local_NCMEC"       : null,
+      stats.projectvic_count > 0 ? "Local_ProjectVIC"  : null,
+      stats.iwf_count        > 0 ? "Local_IWF"         : null,
+      stats.interpol_count   > 0 ? "Local_InterpolICSE": null,
+    ].filter((d): d is string => d !== null);
+
+    if (!match) {
+      return {
+        matched: false,
+        databases_checked: dbs,
+        confidence: 1.0,
+        latency_ms: Date.now() - start,
+      };
+    }
+
+    return {
+      matched: true,
+      databases_checked: dbs,
+      match_source: `Local_${match.database.toUpperCase()}`,
+      match_details: {
+        series_name:        match.series_name,
+        victim_identified:  match.victim_identified,
+        victim_country:     match.victim_country,
+        iwf_category:       match.iwf_category,
+        interpol_case_ref:  match.interpol_case_ref,
+        project_vic_series: match.project_vic_series,
+        ncmec_category:     match.ncmec_category,
+      },
+      confidence: 1.0,
+      latency_ms: Date.now() - start,
+    };
+  }
+
+  return {
+    matched: false,
+    databases_checked: ["Local_Offline"],
+    confidence: 1.0,
+    latency_ms: Date.now() - start,
+  };
+}
+
 // ── Public export ─────────────────────────────────────────────────────────────
 
 export async function checkWatchlists(
@@ -394,7 +488,14 @@ export async function checkWatchlists(
   value: string,
   hashType?: string
 ): Promise<ToolResult<WatchlistResult>> {
-  const fn = process.env["TOOL_MODE"] === "real" ? checkWatchlistsReal : checkWatchlistsStub;
+  let fn: typeof checkWatchlistsStub;
+  if (isOfflineMode() || process.env["TOOL_MODE"] === "offline") {
+    fn = checkWatchlistsOffline;
+  } else if (process.env["TOOL_MODE"] === "real") {
+    fn = checkWatchlistsReal;
+  } else {
+    fn = checkWatchlistsStub;
+  }
   return runTool(() => fn(lookupType, value, hashType));
 }
 
@@ -404,7 +505,27 @@ export function checkHashDBCredentials(): {
   configured: string[];
   missing: string[];
   readyForProduction: boolean;
+  mode: "online" | "offline" | "stub";
 } {
+  // Offline mode uses local hash DB files — no API keys required
+  if (isOfflineMode() || process.env["TOOL_MODE"] === "offline") {
+    const stats = getOfflineHashStats();
+    const configured: string[] = [];
+    const missing: string[] = [];
+
+    if (stats.ncmec_count > 0)       configured.push(`Local_NCMEC(${stats.ncmec_count.toLocaleString()} hashes)`);
+    else                              missing.push("Local_NCMEC (ncmec_hashes.csv)");
+    if (stats.projectvic_count > 0)  configured.push(`Local_ProjectVIC(${stats.projectvic_count.toLocaleString()} hashes)`);
+    else                              missing.push("Local_ProjectVIC (projectvic_hashes.csv)");
+    if (stats.iwf_count > 0)         configured.push(`Local_IWF(${stats.iwf_count.toLocaleString()} hashes)`);
+    else                              missing.push("Local_IWF (iwf_hashes.csv)");
+    if (stats.interpol_count > 0)    configured.push(`Local_Interpol(${stats.interpol_count.toLocaleString()} hashes)`);
+    else                             missing.push("Local_Interpol (interpol_icse_hashes.csv)");
+
+    return { configured, missing, readyForProduction: missing.length === 0, mode: "offline" };
+  }
+
+  // Online mode — check API keys
   const checks = [
     { name: "NCMEC",         key: "NCMEC_API_KEY" },
     { name: "Project VIC",   key: "PROJECT_VIC_ENDPOINT" },
@@ -413,6 +534,7 @@ export function checkHashDBCredentials(): {
     { name: "AbuseIPDB",     key: "ABUSEIPDB_API_KEY" },
   ];
 
+  const toolMode = process.env["TOOL_MODE"];
   const configured = checks.filter(c => !!process.env[c.key]).map(c => c.name);
   const missing    = checks.filter(c => !process.env[c.key]).map(c => c.name);
 
@@ -420,5 +542,6 @@ export function checkHashDBCredentials(): {
     configured,
     missing,
     readyForProduction: missing.length === 0,
+    mode: toolMode === "real" ? "online" : "stub",
   };
 }

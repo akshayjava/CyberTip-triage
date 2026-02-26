@@ -85,6 +85,36 @@ services:
     profiles:
       - production  # Only in production: docker compose --profile production up
 
+  # ── Ollama (local LLM server for offline/air-gap mode) ───────────────────────
+  # Activated by: docker compose --profile offline up
+  # Before going air-gap, pull Gemma models on a connected machine:
+  #   ollama pull gemma3:27b && ollama pull gemma3:12b && ollama pull gemma3:4b
+  # Then save the Ollama data volume and restore it on the air-gap machine.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cybertip-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    expose:
+      - "11434"
+    # GPU support (uncomment if NVIDIA GPU available):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    profiles:
+      - offline   # Only started in offline mode: docker compose --profile offline up
+
 volumes:
   postgres_data:
     driver: local
@@ -94,3 +124,5 @@ volumes:
     driver: local
   nginx_logs:
     driver: local
+  ollama_models:
+    driver: local   # Persists Gemma model weights across container restarts
