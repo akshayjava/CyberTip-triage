@@ -12,6 +12,7 @@ import type { Application, Request, Response } from "express";
 import { getBundleStats, checkBundleDuplicate } from "../ingestion/bundle_dedup.js";
 import { checkHashDBCredentials } from "../tools/hash/check_watchlists.js";
 import { listTips, getTipById } from "../db/tips.js";
+import type { CyberTip, TipFile } from "../models/index.js";
 
 function wrapAsync(
   fn: (req: Request, res: Response) => Promise<void>
@@ -39,14 +40,14 @@ async function handleGetBundle(req: Request, res: Response): Promise<void> {
   // Count duplicates that reference this canonical
   const { tips } = await listTips({ limit: 10_000 });
   const duplicates = tips.filter(
-    t => t.status === "duplicate" && (t.links as { duplicate_of?: string })?.duplicate_of === tip.tip_id
+    (t) => t.status === "duplicate" && t.links?.duplicate_of === tip.tip_id
   );
 
   res.json({
     canonical: tip,
     duplicate_count: duplicates.length,
     total_incident_count: tip.bundled_incident_count ?? 1,
-    duplicates_absorbed: duplicates.map((d: any) => ({
+    duplicates_absorbed: duplicates.map((d) => ({
       tip_id: d.tip_id,
       received_at: d.received_at,
       source: d.source,
@@ -80,7 +81,7 @@ async function handleHashStats(_req: Request, res: Response): Promise<void> {
   const cutoffISO = cutoff.toISOString();
 
   const { tips } = await listTips({ limit: 10_000 });
-  const recent = tips.filter((t: any) => t.received_at >= cutoffISO);
+  const recent = tips.filter((t) => t.received_at >= cutoffISO);
 
   let ncmecMatches = 0;
   let projectVicMatches = 0;
@@ -100,8 +101,8 @@ async function handleHashStats(_req: Request, res: Response): Promise<void> {
     }
   }
 
-  const anyMatch = recent.filter((t: any) =>
-    t.files?.some((f: any) => f.ncmec_hash_match || f.project_vic_match || f.iwf_match || f.interpol_icse_match)
+  const anyMatch = recent.filter((t) =>
+    t.files?.some((f: TipFile) => f.ncmec_hash_match || f.project_vic_match || f.iwf_match || f.interpol_icse_match)
   ).length;
 
   res.json({
