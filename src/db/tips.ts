@@ -40,6 +40,8 @@ export interface ListTipsOptions {
   since?: string;
   /** Filter by bundled status */
   is_bundled?: boolean;
+  /** Exclude large body fields (raw_body, normalized_body) for performance */
+  exclude_body?: boolean;
 }
 
 export interface ListTipsResult {
@@ -315,6 +317,11 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       return (b.priority?.score ?? 0) - (a.priority?.score ?? 0);
     });
 
+    // Handle exclude_body (memory mode)
+    if (opts.exclude_body) {
+      tips = tips.map((t) => ({ ...t, raw_body: "", normalized_body: "" }));
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -357,9 +364,14 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   );
   const total = parseInt(countResult.rows[0]!.count, 10);
 
+  // ⚡ Bolt Optimization: Exclude large body text when not needed
+  const columns = opts.exclude_body
+    ? "tip_id, ncmec_tip_number, ids_case_number, source, received_at, status, is_bundled, bundled_incident_count, ncmec_urgent_flag, reporter, jurisdiction_of_tip, legal_status, extracted, hash_matches, classification, links, priority, '' as raw_body, '' as normalized_body"
+    : "*";
+
   // Data query — sorted by tier priority then score, paginated
   const dataResult = await pool.query<TipRow>(
-    `SELECT * FROM cyber_tips ${where}
+    `SELECT ${columns} FROM cyber_tips ${where}
      ORDER BY
        CASE priority->>'tier'
          WHEN 'IMMEDIATE' THEN 0

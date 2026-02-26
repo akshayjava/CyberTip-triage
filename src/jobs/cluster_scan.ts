@@ -34,7 +34,7 @@
 
 import { randomUUID } from "crypto";
 import { getPool } from "../db/pool.js";
-import { listTips, upsertTip } from "../db/tips.js";
+import { listTips, upsertTip, getTipById } from "../db/tips.js";
 import { appendAuditEntry } from "../compliance/audit.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
 import type { CyberTip, TipLinks } from "../models/index.js";
@@ -328,7 +328,8 @@ async function applyClusterToTip(
   cluster: ClusterGroup,
   allTips: Map<string, CyberTip>
 ): Promise<{ escalated: boolean }> {
-  const tip = allTips.get(tipId);
+  // Always fetch full tip to prevent overwriting body with empty string (from exclude_body)
+  const tip = await getTipById(tipId);
   if (!tip) return { escalated: false };
 
   const newFlag = {
@@ -421,7 +422,8 @@ export async function runClusterScan(): Promise<ClusterScanResult> {
   const isPostgres = process.env["DB_MODE"] === "postgres";
 
   // Load all tips into a map for fast lookup during cluster application
-  const { tips: allTipsArr } = await listTips({ limit: 20_000 });
+  // ⚡ Bolt Optimization: Exclude body to save ~200MB memory during scan
+  const { tips: allTipsArr } = await listTips({ limit: 20_000, exclude_body: true });
   const allTipsMap = new Map(allTipsArr.map(t => [t.tip_id, t]));
 
   // Run pattern detection
