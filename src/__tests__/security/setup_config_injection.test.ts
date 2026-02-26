@@ -56,6 +56,32 @@ describe('Setup Configuration Injection Vulnerability', () => {
     expect(writeFileMock).not.toHaveBeenCalled();
   });
 
+  it('should reject malicious environment variables via idsEmail', async () => {
+    const maliciousPayload = {
+      agencyName: 'Valid Agency',
+      agencyState: 'CA',
+      contactEmail: 'admin@example.com',
+      port: '3000',
+      mode: 'node',
+      apiKey: 'test-key',
+      idsEnabled: true,
+      idsEmail: 'investigator@agency.gov\nINJECTED_VAR=hacked',
+      ncmecEnabled: false,
+      emailEnabled: false,
+      forensicsTools: [],
+    };
+
+    const res = await request(app)
+      .post('/api/setup/save')
+      .send(maliciousPayload);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('IDS Email cannot contain newlines or double quotes');
+
+    const writeFileMock = fsPromises.writeFile as unknown as ReturnType<typeof vi.fn>;
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
   it('should reject malicious environment variables via agencyState', async () => {
     const maliciousPayload = {
       agencyName: 'Valid Agency',
