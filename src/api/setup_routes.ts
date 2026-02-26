@@ -208,6 +208,8 @@ interface ValidationResult {
   error?: string;
 }
 
+const VALID_FORENSICS_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"] as const;
+
 function validateSetupConfig(config: SetupConfig): ValidationResult {
   // Helper to validate no newlines or double quotes
   const isSafe = (val: string | undefined): boolean => {
@@ -252,6 +254,21 @@ function validateSetupConfig(config: SetupConfig): ValidationResult {
   if (isNaN(port) || port < 1024 || port > 65535) {
     return { valid: false, error: "Port must be between 1024 and 65535" };
   }
+
+  if (config.forensicsTools !== undefined) {
+    if (!Array.isArray(config.forensicsTools)) {
+      return { valid: false, error: "forensicsTools must be an array" };
+    }
+    for (const tool of config.forensicsTools) {
+      if (typeof tool !== "string") {
+        return { valid: false, error: "forensicsTools must be an array of strings" };
+      }
+      if (!(VALID_FORENSICS_PLATFORMS as readonly string[]).includes(tool.toUpperCase())) {
+        return { valid: false, error: `Invalid forensics platform: "${tool}". Must be one of: ${VALID_FORENSICS_PLATFORMS.join(", ")}` };
+      }
+    }
+  }
+
   return { valid: true };
 }
 
@@ -348,10 +365,11 @@ FORENSICS_ENABLED_PLATFORMS=${buildForensicsPlatformsValue(c.forensicsTools)}
 `;
 }
 
-const VALID_FORENSICS_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"] as const;
-
 function buildForensicsPlatformsValue(tools?: string[]): string {
-  const selected = (tools ?? [])
+  if (!Array.isArray(tools)) {
+    return "GENERIC";
+  }
+  const selected = tools
     .map((t) => t.toUpperCase())
     .filter((t) => (VALID_FORENSICS_PLATFORMS as readonly string[]).includes(t));
 
