@@ -7,7 +7,7 @@
  */
 
 import { getLLMProvider } from "../llm/index.js";
-import type { CyberTip, Classification } from "../models/index.js";
+import type { CyberTip, Classification, TipFile, Victim, OsintFinding } from "../models/index.js";
 import { ClassificationSchema } from "../models/index.js";
 import { wrapTipContent, wrapTipMetadata } from "../compliance/prompt-guards.js";
 import { appendAuditEntry } from "../compliance/audit.js";
@@ -121,7 +121,7 @@ function buildClassifierContext(tip: CyberTip): {
     esp_name: espName,
     received_at: tip.received_at,
     file_count: tip.files.length,
-    accessible_file_count: tip.files.filter((f: any) => !f.file_access_blocked).length,
+    accessible_file_count: tip.files.filter((f: TipFile) => !f.file_access_blocked).length,
     any_hash_match: tip.hash_matches?.any_match ?? false,
     match_sources: tip.hash_matches?.match_sources ?? [],
     aig_csam_detected: tip.hash_matches?.aig_csam_detected ?? false,
@@ -130,7 +130,7 @@ function buildClassifierContext(tip: CyberTip): {
     subject_count: tip.extracted?.subjects.length ?? 0,
     victim_count: tip.extracted?.victims.length ?? 0,
     victim_age_ranges:
-      tip.extracted?.victims.map((v: any) => v.age_range) ?? [],
+      tip.extracted?.victims.map((v: Victim) => v.age_range) ?? [],
     victim_crisis_indicators:
       tip.extracted?.victim_crisis_indicators ?? [],
     urgency_indicators: tip.extracted?.urgency_indicators ?? [],
@@ -138,8 +138,8 @@ function buildClassifierContext(tip: CyberTip): {
       tip.hash_matches?.dark_web_indicators.length ?? 0,
     referenced_platforms: tip.extracted?.referenced_platforms ?? [],
     countries_from_ip: tip.hash_matches?.osint_findings
-      .filter((f: any) => f.geolocation)
-      .map((f: any) => f.geolocation)
+      .filter((f: OsintFinding) => f.geolocation)
+      .map((f: OsintFinding) => f.geolocation)
       .slice(0, 5) ?? [],
   };
 
@@ -190,7 +190,7 @@ export async function runClassifierAgent(
       }
 
       // Hard override: CSAM + minor victim → never below P1_CRITICAL
-      const hasMinorVictim = tip.extracted?.victims.some((v: any) =>
+      const hasMinorVictim = tip.extracted?.victims.some((v: Victim) =>
         ["0-2", "3-5", "6-9", "10-12", "13-15", "16-17"].includes(v.age_range)
       );
       if (
