@@ -288,13 +288,23 @@
               </span>
             </div>
           </div>
-          {blocked && file.warrant_required && (
+          {blocked && (
             <div className="mt-1 flex items-center gap-2">
               <span className="text-gray-500">Warrant:</span>
               <span className={`${file.warrant_status === 'granted' ? 'text-green-400' :
                 file.warrant_status === 'denied' ? 'text-red-400' :
                   file.warrant_status === 'applied' ? 'text-yellow-400' : 'text-gray-400'
-                }`}>{file.warrant_status}</span>
+                }`}>{file.warrant_status || 'not applied'}</span>
+              
+              {!file.warrant_status && (
+                <button
+                  onClick={() => onWarrantUpdate(file.file_id, 'applied')}
+                  className="bg-blue-900 hover:bg-blue-800 text-blue-300 px-2 py-0.5 rounded text-xs"
+                >
+                  Request Warrant
+                </button>
+              )}
+
               {file.warrant_status === 'applied' && (
                 <>
                   <button
