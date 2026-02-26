@@ -209,23 +209,41 @@ interface ValidationResult {
 }
 
 function validateSetupConfig(config: SetupConfig): ValidationResult {
+  // Helper to validate no newlines or double quotes
+  const isSafe = (val: string | undefined): boolean => {
+    if (!val) return true;
+    return !/[\r\n"]/.test(val);
+  };
+
   if (!config.agencyName?.trim()) {
     return { valid: false, error: "Agency name is required" };
   }
-  if (/[\r\n"]/.test(config.agencyName)) {
+  if (!isSafe(config.agencyName)) {
     return { valid: false, error: "Agency name cannot contain newlines or double quotes" };
   }
 
   if (!config.agencyState?.trim()) {
     return { valid: false, error: "State is required" };
   }
-  if (/[\r\n"]/.test(config.agencyState)) {
+  if (!isSafe(config.agencyState)) {
     return { valid: false, error: "State cannot contain newlines or double quotes" };
   }
 
-  if (config.contactEmail && /[\r\n"]/.test(config.contactEmail)) {
-    return { valid: false, error: "Contact email cannot contain newlines or double quotes" };
-  }
+  if (!isSafe(config.contactEmail)) return { valid: false, error: "Contact email cannot contain newlines or double quotes" };
+  if (!isSafe(config.apiKey)) return { valid: false, error: "API Key cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.idsEmail)) return { valid: false, error: "IDS Email cannot contain newlines or double quotes" };
+  if (!isSafe(config.idsPassword)) return { valid: false, error: "IDS Password cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.ncmecKey)) return { valid: false, error: "NCMEC Key cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.emailHost)) return { valid: false, error: "Email Host cannot contain newlines or double quotes" };
+  if (!isSafe(config.emailUser)) return { valid: false, error: "Email User cannot contain newlines or double quotes" };
+  if (!isSafe(config.emailPass)) return { valid: false, error: "Email Password cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.vicKey)) return { valid: false, error: "VIC Key cannot contain newlines or double quotes" };
+  if (!isSafe(config.iwfKey)) return { valid: false, error: "IWF Key cannot contain newlines or double quotes" };
+  if (!isSafe(config.deconKey)) return { valid: false, error: "Deconfliction Key cannot contain newlines or double quotes" };
 
   if (!["docker", "node"].includes(config.mode)) {
     return { valid: false, error: "Mode must be docker or node" };
