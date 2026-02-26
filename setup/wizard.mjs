@@ -181,6 +181,131 @@ async function main() {
 
   success(`Deployment mode: ${mode === "docker" ? "Docker (recommended)" : "Node.js"}`);
 
+  // ── Air-Gap / Offline mode ─────────────────────────────────────────────────
+  section("Step 2b of 7 — Network / Connectivity Mode");
+  print("  CyberTip Triage can run in two connectivity modes:");
+  print();
+  print(`  ${bold("1. Connected")} (default) — uses cloud LLM APIs (Anthropic Claude, etc.)`);
+  print(`     Best for task forces with reliable internet access.`);
+  print(`     Provides the highest-quality AI analysis.`);
+  print();
+  print(`  ${bold("2. Offline / Air-Gap")} — no internet access required`);
+  print(`     Runs entirely on your local network with local AI models.`);
+  print(`     Required for classified networks, SCIFs, or strict data policies.`);
+  print(`     Uses Google Gemma (open-weight) or other local models via Ollama.`);
+  print(`     Hash databases (NCMEC, IWF, Project VIC) loaded from local files.`);
+  print(`     Twilio SMS disabled; alerts delivered via local email/file queue.`);
+  print();
+
+  const useOfflineMode = await askYesNo(
+    "Is this deployment on an air-gapped / offline network?",
+    false
+  );
+
+  let offlineMode = false;
+  let llmProvider = "anthropic";
+  let localLlmBaseUrl = "";
+  let gemmaModelHigh = "gemma3:27b";
+  let gemmaModelMedium = "gemma3:12b";
+  let gemmaModelFast = "gemma3:4b";
+  let offlineHashDbPath = "./data/offline-hash-db";
+  let offlineAlertMode = "both";
+  let offlineAlertQueuePath = "./data/alert-queue";
+
+  if (useOfflineMode) {
+    offlineMode = true;
+
+    print();
+    print(`  ${bold("Local LLM Backend")} — which server will run Gemma?`);
+    print();
+    print(`  ${bold("1. Ollama")} (recommended) — easy install, supports Gemma 3`);
+    print(`     Install: curl -fsSL https://ollama.com/install.sh | sh`);
+    print(`     Pull models: ollama pull gemma3:27b && ollama pull gemma3:12b && ollama pull gemma3:4b`);
+    print(`     Runs on http://localhost:11434`);
+    print();
+    print(`  ${bold("2. vLLM")} — GPU server, best throughput for high-volume deployments`);
+    print(`     Requires NVIDIA GPU with CUDA.`);
+    print(`     Runs on http://localhost:8000`);
+    print();
+    print(`  ${bold("3. llama.cpp")} — minimal dependencies, CPU+GPU, any model`);
+    print(`     Runs on http://localhost:8080`);
+    print();
+    print(`  ${bold("4. Custom")} — any OpenAI-compatible API server`);
+    print();
+
+    const backendChoice = await ask("Local LLM backend (1=Ollama, 2=vLLM, 3=llama.cpp, 4=Custom)", "1");
+    const backendDefaults = {
+      "1": "http://localhost:11434/v1",
+      "2": "http://localhost:8000/v1",
+      "3": "http://localhost:8080/v1",
+      "4": "",
+    };
+    const defaultUrl = backendDefaults[backendChoice] || "";
+    localLlmBaseUrl = await ask("Local LLM base URL", defaultUrl || "http://localhost:11434/v1");
+    llmProvider = "gemma";
+
+    print();
+    info("Gemma 3 model sizes — choose based on your hardware:");
+    print(`  ${bold("gemma3:27b")} — Best quality, needs 24+ GB VRAM or 64 GB RAM`);
+    print(`  ${bold("gemma3:12b")} — Good balance, needs 12+ GB VRAM or 32 GB RAM`);
+    print(`  ${bold("gemma3:4b")}  — Fastest, needs 6+ GB VRAM or 16 GB RAM`);
+    print();
+
+    const useDefaultGemmaModels = await askYesNo("Use default Gemma 3 model sizes (27b/12b/4b)?", true);
+    if (!useDefaultGemmaModels) {
+      gemmaModelHigh   = await ask("High-quality model (complex analysis)", "gemma3:27b");
+      gemmaModelMedium = await ask("Medium model (linking, deconfliction)", "gemma3:12b");
+      gemmaModelFast   = await ask("Fast model (intake, extraction)", "gemma3:4b");
+    }
+
+    success(`Local LLM: ${llmProvider} @ ${localLlmBaseUrl}`);
+    success(`Models: high=${gemmaModelHigh}, medium=${gemmaModelMedium}, fast=${gemmaModelFast}`);
+
+    print();
+    section("Offline Hash Databases");
+    print("  Local hash databases replace live NCMEC / Project VIC / IWF / Interpol API calls.");
+    print("  Obtain CSV exports from your LE liaisons before going air-gap.");
+    print("  Required files:");
+    print("    ncmec_hashes.csv, projectvic_hashes.csv, iwf_hashes.csv, interpol_icse_hashes.csv");
+    print("    tor_exit_nodes.txt, known_vpns.txt");
+    print();
+
+    offlineHashDbPath = await ask(
+      "Path to local hash database directory",
+      "./data/offline-hash-db"
+    );
+    success(`Hash DB path: ${offlineHashDbPath}`);
+
+    print();
+    print("  Alert delivery in offline mode (Twilio SMS is disabled):");
+    print(`  ${bold("smtp")}  — internal SMTP server only`);
+    print(`  ${bold("file")}  — write alerts to a local JSON queue directory`);
+    print(`  ${bold("both")}  — SMTP + file queue (recommended)`);
+    print();
+
+    offlineAlertMode = await ask("Alert delivery mode (smtp/file/both)", "both");
+    offlineAlertQueuePath = await ask("Alert file queue path", "./data/alert-queue");
+    success(`Alert mode: ${offlineAlertMode}`);
+
+  } else {
+    // Connected mode — choose LLM provider
+    print();
+    print(`  ${bold("LLM Provider")} — which AI service for tip analysis?`);
+    print();
+    print(`  ${bold("1. Anthropic Claude")} (recommended) — highest quality, purpose-built for complex reasoning`);
+    print(`  ${bold("2. OpenAI GPT")}       — GPT-4o, strong alternative`);
+    print(`  ${bold("3. Local model")}      — Ollama/vLLM on local GPU (any model)`);
+    print();
+
+    const providerChoice = await ask("LLM provider (1=Anthropic, 2=OpenAI, 3=Local)", "1");
+    if (providerChoice === "2") llmProvider = "openai";
+    else if (providerChoice === "3") {
+      llmProvider = "local";
+      localLlmBaseUrl = await ask("Local LLM base URL", "http://localhost:11434/v1");
+    }
+    // else default: anthropic
+  }
+
   // ── Agency info ────────────────────────────────────────────────────────────
   section("Step 3 of 7 — Your Task Force");
   const agencyName = await ask("Agency / Task Force name", "ICAC Task Force");
@@ -188,30 +313,61 @@ async function main() {
   const contactEmail = await ask("IT contact email (for alerts)");
   const port = await ask("Port to run on", "3000");
 
-  // ── Anthropic API key ──────────────────────────────────────────────────────
-  section("Step 4 of 7 — Anthropic API Key");
-  print("  CyberTip Triage uses Anthropic's Claude AI for tip analysis.");
-  print(`  Get your key at: ${bold("https://console.anthropic.com")}`);
-  print();
-  print("  Recommended model access: Claude Opus + Sonnet + Haiku");
-  print("  Estimated cost: ~$2–5 per 1,000 tips processed");
-  print();
-
+  // ── LLM API key (only for connected mode) ─────────────────────────────────
   let anthropicKey = "";
-  let keyValid = false;
-  while (!keyValid) {
-    anthropicKey = await askSecret("Anthropic API key (sk-ant-...)");
-    keyValid = await checkAnthropicKey(anthropicKey);
-    if (!keyValid) {
-      err("Key format invalid — should start with sk-ant- and be at least 30 characters");
-      const retry = await askYesNo("Try again?", true);
-      if (!retry) {
-        warn("Skipping API key — you must add it to .env before starting");
-        anthropicKey = "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY";
-        break;
+
+  if (offlineMode) {
+    section("Step 4 of 7 — LLM Configuration (Offline)");
+    print("  Running in offline mode — no cloud API keys required.");
+    print(`  LLM provider: ${bold("Gemma")} (local)`);
+    print(`  Endpoint: ${bold(localLlmBaseUrl)}`);
+    print();
+    print("  Before starting, ensure your local LLM server is running:");
+    if (localLlmBaseUrl.includes(":11434")) {
+      print(`    ${cyan("ollama serve")}`);
+      print(`    ${cyan(`ollama pull ${gemmaModelHigh}`)}`);
+      print(`    ${cyan(`ollama pull ${gemmaModelMedium}`)}`);
+      print(`    ${cyan(`ollama pull ${gemmaModelFast}`)}`);
+    } else if (localLlmBaseUrl.includes(":8000")) {
+      print(`    ${cyan(`python -m vllm.entrypoints.openai.api_server --model google/${gemmaModelHigh} --port 8000`)}`);
+    }
+    warn("Tool use (function calling) requires Ollama >= 0.3.x or vLLM >= 0.5.x");
+    anthropicKey = "";
+  } else if (llmProvider === "openai") {
+    section("Step 4 of 7 — OpenAI API Key");
+    print("  CyberTip Triage will use OpenAI GPT for tip analysis.");
+    print();
+    const openaiKey = await askSecret("OpenAI API key (sk-...)");
+    anthropicKey = openaiKey; // reuse var, written as OPENAI_API_KEY below
+  } else if (llmProvider === "local") {
+    section("Step 4 of 7 — Local LLM Configuration");
+    print(`  Using local LLM at: ${bold(localLlmBaseUrl)}`);
+    print("  No API key required for Ollama. For vLLM, set LOCAL_LLM_API_KEY manually.");
+    warn("Ensure your local LLM server supports function calling / tool use.");
+    anthropicKey = "";
+  } else {
+    section("Step 4 of 7 — Anthropic API Key");
+    print("  CyberTip Triage uses Anthropic's Claude AI for tip analysis.");
+    print();
+    print("  Recommended model access: Claude Opus + Sonnet + Haiku");
+    print("  Estimated cost: ~$2–5 per 1,000 tips processed");
+    print();
+
+    let keyValid = false;
+    while (!keyValid) {
+      anthropicKey = await askSecret("Anthropic API key (sk-ant-...)");
+      keyValid = await checkAnthropicKey(anthropicKey);
+      if (!keyValid) {
+        err("Key format invalid — should start with sk-ant- and be at least 30 characters");
+        const retry = await askYesNo("Try again?", true);
+        if (!retry) {
+          warn("Skipping API key — you must add it to .env before starting");
+          anthropicKey = "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY";
+          break;
+        }
+      } else {
+        success("API key format valid");
       }
-    } else {
-      success("API key format valid");
     }
   }
 
@@ -246,29 +402,54 @@ async function main() {
 
   // ── IDS Portal credentials ────────────────────────────────────────────────
   section("Step 6 of 7 — NCMEC IDS Portal (Optional)");
-  print("  The IDS Portal (icacdatasystem.com) delivers CyberTip referrals");
-  print("  from NCMEC to your task force. Credentials require ICAC registration.");
-  print();
 
-  const hasIdsCredentials = await askYesNo("Do you have IDS Portal credentials?", false);
   let idsEmail = "";
   let idsPassword = "";
   let idsEnabled = false;
+  let ncmecApiKey = "";
+  let ncmecEnabled = false;
 
-  if (hasIdsCredentials) {
-    idsEmail = await ask("IDS login email");
-    idsPassword = await askSecret("IDS password");
-    idsEnabled = true;
-    success("IDS Portal configured — tips will be polled automatically");
+  if (offlineMode) {
+    print("  Offline mode: NCMEC IDS Portal (icacdatasystem.com) is an external service.");
+    print("  Tips must be imported via local file drop or internal email.");
+    print();
+    info("Tips can be placed in IDS_STUB_DIR for file-based import.");
+    info("Internal email ingestion is supported if EMAIL_IMAP_HOST is on your LAN.");
+    warn("IDS Portal and NCMEC API are disabled in offline mode.");
   } else {
-    warn("IDS not configured — you can add credentials to .env later");
-    info("Register at: https://www.icacdatasystem.com");
-    info("In the meantime, you can manually submit tips via the VPN portal");
+    print("  The IDS Portal (icacdatasystem.com) delivers CyberTip referrals");
+    print("  from NCMEC to your task force. Credentials require ICAC registration.");
+    print();
+
+    const hasIdsCredentials = await askYesNo("Do you have IDS Portal credentials?", false);
+
+    if (hasIdsCredentials) {
+      idsEmail = await ask("IDS login email");
+      idsPassword = await askSecret("IDS password");
+      idsEnabled = true;
+      success("IDS Portal configured — tips will be polled automatically");
+    } else {
+      warn("IDS not configured — you can add credentials to .env later");
+      info("Register at: https://www.icacdatasystem.com");
+      info("In the meantime, you can manually submit tips via the VPN portal");
+    }
+
+    // ── NCMEC API ───────────────────────────────────────────────────────────
+    const hasNcmecApi = await askYesNo("Do you have NCMEC API credentials?", false);
+    if (hasNcmecApi) {
+      ncmecApiKey = await askSecret("NCMEC API key");
+      ncmecEnabled = true;
+      success("NCMEC API configured");
+    } else {
+      info("Contact NCMEC at: missingkids.org/gethelpnow/cyberTipline");
+    }
   }
 
   // ── Email tip inbox ────────────────────────────────────────────────────────
   const hasEmailInbox = await askYesNo(
-    "Do you have an email inbox for receiving tips? (e.g. tips@icac.agency.gov)",
+    offlineMode
+      ? "Do you have an internal IMAP server for receiving tips? (LAN only)"
+      : "Do you have an email inbox for receiving tips? (e.g. tips@icac.agency.gov)",
     false
   );
   let emailHost = "";
@@ -277,24 +458,14 @@ async function main() {
   let emailEnabled = false;
 
   if (hasEmailInbox) {
-    emailHost = await ask("IMAP server hostname", "imap.agency.gov");
+    emailHost = await ask("IMAP server hostname", offlineMode ? "imap.icac.local" : "imap.agency.gov");
     emailUser = await ask("Email address");
     emailPassword = await askSecret("Email password");
     emailEnabled = true;
     success("Email ingestion configured");
-  }
-
-  // ── NCMEC API ─────────────────────────────────────────────────────────────
-  const hasNcmecApi = await askYesNo("Do you have NCMEC API credentials?", false);
-  let ncmecApiKey = "";
-  let ncmecEnabled = false;
-
-  if (hasNcmecApi) {
-    ncmecApiKey = await askSecret("NCMEC API key");
-    ncmecEnabled = true;
-    success("NCMEC API configured");
-  } else {
-    info("Contact NCMEC at: missingkids.org/gethelpnow/cyberTipline");
+    if (offlineMode) {
+      info("Ensure this IMAP server is on your local network — external IMAP is blocked in offline mode.");
+    }
   }
 
   // ── Security ──────────────────────────────────────────────────────────────
@@ -304,9 +475,46 @@ async function main() {
   success("Auto-generated secure secrets for internal services");
 
   // ── Write .env ────────────────────────────────────────────────────────────
+  const llmBlock = offlineMode ? `
+# ── LLM — Offline / Air-Gap Mode (Gemma via Ollama/vLLM) ─────────────────────
+OFFLINE_MODE=true
+LLM_PROVIDER=gemma
+LOCAL_LLM_BASE_URL=${localLlmBaseUrl}
+GEMMA_MODEL_HIGH=${gemmaModelHigh}
+GEMMA_MODEL_MEDIUM=${gemmaModelMedium}
+GEMMA_MODEL_FAST=${gemmaModelFast}
+# No API key required — Ollama ignores it; vLLM may need LOCAL_LLM_API_KEY
+# LOCAL_LLM_API_KEY=your-vllm-key
+
+# ── Offline Hash Databases ────────────────────────────────────────────────────
+# Place CSV exports from NCMEC/IWF/ProjectVIC/Interpol in this directory.
+# Files: ncmec_hashes.csv, projectvic_hashes.csv, iwf_hashes.csv,
+#        interpol_icse_hashes.csv, tor_exit_nodes.txt, known_vpns.txt
+TOOL_MODE=offline
+OFFLINE_HASH_DB_PATH=${offlineHashDbPath}
+OFFLINE_ALERT_MODE=${offlineAlertMode}
+OFFLINE_ALERT_QUEUE_PATH=${offlineAlertQueuePath}
+# OFFLINE_NETWORK_WHITELIST=10.0.0.0/8,192.168.0.0/16   # Add extra LAN CIDRs
+# OFFLINE_DECONFLICTION_DB_URL=postgresql://user:pass@deconflict.icac.local/rissafe
+
+# ── Network Guard ─────────────────────────────────────────────────────────────
+# All external internet connections are blocked. Only RFC-1918 + localhost allowed.
+# The following NCMEC/Twilio/Anthropic services are disabled:
+# IDS_ENABLED=false, NCMEC_API_ENABLED=false, Twilio SMS disabled
+` : `
+# ── LLM Provider ─────────────────────────────────────────────────────────────
+OFFLINE_MODE=false
+LLM_PROVIDER=${llmProvider}
+${llmProvider === "anthropic" ? `ANTHROPIC_API_KEY=${anthropicKey}` :
+  llmProvider === "openai"    ? `OPENAI_API_KEY=${anthropicKey}` :
+  `LOCAL_LLM_BASE_URL=${localLlmBaseUrl}
+# LOCAL_LLM_API_KEY=ollama`}
+`;
+
   const envContent = `# CyberTip Triage — Configuration
 # Generated by setup wizard on ${new Date().toISOString()}
 # Agency: ${agencyName} (${agencyState})
+# Mode: ${offlineMode ? "OFFLINE / AIR-GAP" : "Connected (internet)"}
 # ⚠ KEEP THIS FILE SECURE — Contains credentials
 
 # ── Agency ────────────────────────────────────────────────────────────────────
@@ -318,10 +526,7 @@ CONTACT_EMAIL="${contactEmail}"
 PORT=${port}
 NODE_ENV=production
 CORS_ORIGIN=http://localhost:${port}
-
-# ── Anthropic AI ──────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY=${anthropicKey}
-
+${llmBlock}
 # ── Database ──────────────────────────────────────────────────────────────────
 DB_MODE=${mode === "docker" ? "postgres" : "postgres"}
 DATABASE_URL=${dbUrl}
@@ -335,20 +540,20 @@ REDIS_PASSWORD=${redisPassword}
 QUEUE_CONCURRENCY=5
 
 # ── NCMEC IDS Portal ──────────────────────────────────────────────────────────
-IDS_ENABLED=${idsEnabled}
+IDS_ENABLED=${offlineMode ? "false" : String(idsEnabled)}
 IDS_BASE_URL=https://www.icacdatasystem.com
 IDS_POLL_INTERVAL_MS=60000
 IDS_DOWNLOAD_DIR=/tmp/cybertip-ids
 IDS_STUB_DIR=./test-data/ids-stubs
-${idsEnabled ? `IDS_EMAIL=${idsEmail}
+${!offlineMode && idsEnabled ? `IDS_EMAIL=${idsEmail}
 IDS_PASSWORD=${idsPassword}` : `# IDS_EMAIL=your-ids-email@agency.gov
 # IDS_PASSWORD=`}
 
 # ── NCMEC API ─────────────────────────────────────────────────────────────────
-NCMEC_API_ENABLED=${ncmecEnabled}
+NCMEC_API_ENABLED=${offlineMode ? "false" : String(ncmecEnabled)}
 NCMEC_API_BASE_URL=https://api.ncmec.org
 NCMEC_POLL_INTERVAL_MS=30000
-${ncmecEnabled ? `NCMEC_API_KEY=${ncmecApiKey}` : `# NCMEC_API_KEY=`}
+${!offlineMode && ncmecEnabled ? `NCMEC_API_KEY=${ncmecApiKey}` : `# NCMEC_API_KEY=`}
 
 # ── Email Ingestion ───────────────────────────────────────────────────────────
 EMAIL_ENABLED=${emailEnabled}
@@ -356,7 +561,7 @@ ${emailEnabled ? `EMAIL_IMAP_HOST=${emailHost}
 EMAIL_IMAP_PORT=993
 EMAIL_TLS=true
 EMAIL_USER=${emailUser}
-EMAIL_PASSWORD=${emailPassword}` : `# EMAIL_IMAP_HOST=imap.agency.gov
+EMAIL_PASSWORD=${emailPassword}` : `# EMAIL_IMAP_HOST=${offlineMode ? "imap.icac.local" : "imap.agency.gov"}
 # EMAIL_IMAP_PORT=993
 # EMAIL_TLS=true
 # EMAIL_USER=tips@icac.agency.gov
@@ -371,12 +576,16 @@ VPN_PORTAL_SECRET=${portalSecret}
 INTER_AGENCY_ENABLED=false
 # INTER_AGENCY_API_KEYS=key1,key2
 
-# ── External APIs (add as you obtain credentials) ────────────────────────────
+${offlineMode ? `# ── External APIs (DISABLED in offline mode) ─────────────────────────────────
+# All external API calls are blocked by the network guard.
+# Hash lookups use local CSV files in OFFLINE_HASH_DB_PATH instead.
+` : `# ── External APIs (add as you obtain credentials) ────────────────────────────
 # PROJECT_VIC_API_KEY=         # projectvic.org — law enforcement vetting required
 # IWF_API_KEY=                 # IWF Contraband Filter — contact IWF LE liaison
 # INTERPOL_ICSE_KEY=           # Via your INTERPOL NCB liaison
 # RISSAFE_API_KEY=             # Contact your regional RISS center
 # HIBP_API_KEY=                # haveibeenpwned.com/API
+`}
 `;
 
   await writeFile(join(ROOT, ".env"), envContent, { mode: 0o600 });
@@ -459,25 +668,50 @@ Notes: Sample tip created by setup wizard.
   print();
   print(`  ${bold("Agency:")}       ${agencyName} (${agencyState})`);
   print(`  ${bold("Mode:")}         ${mode === "docker" ? "Docker" : "Node.js"}`);
-  print(`  ${bold("IDS Portal:")}   ${idsEnabled ? green("✓ Configured") : yellow("Not yet — add credentials to .env")}`);
-  print(`  ${bold("NCMEC API:")}    ${ncmecEnabled ? green("✓ Configured") : yellow("Not yet — add credentials to .env")}`);
+  print(`  ${bold("Network:")}      ${offlineMode ? red("OFFLINE / AIR-GAP (no internet)") : green("Connected")}`);
+  print(`  ${bold("LLM:")}          ${offlineMode ? `Gemma (${localLlmBaseUrl})` : llmProvider}`);
+  if (offlineMode) {
+    print(`  ${bold("Hash DBs:")}     ${yellow(`Place CSV exports in: ${offlineHashDbPath}`)}`);
+    print(`  ${bold("Alerts:")}       ${offlineAlertMode === "smtp" ? "Internal SMTP" : offlineAlertMode === "file" ? "File queue" : "SMTP + file queue"}`);
+  } else {
+    print(`  ${bold("IDS Portal:")}   ${idsEnabled ? green("✓ Configured") : yellow("Not yet — add credentials to .env")}`);
+    print(`  ${bold("NCMEC API:")}    ${ncmecEnabled ? green("✓ Configured") : yellow("Not yet — add credentials to .env")}`);
+  }
   print(`  ${bold("Email:")}        ${emailEnabled ? green("✓ Configured") : yellow("Not configured")}`);
   print();
   hr();
   print();
 
   if (mode === "docker") {
-    print(`  ${bold("To start CyberTip Triage:")} `);
-    print();
-    print(`    ${cyan("./start.sh")}`);
-    print();
-    print(`  Or manually:`);
-    print(`    ${cyan("docker compose up -d")}`);
+    if (offlineMode) {
+      print(`  ${bold("To start CyberTip Triage (offline mode):")} `);
+      print();
+      print(`    ${cyan("docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d")}`);
+      print();
+      print(`  This starts the app + PostgreSQL + Redis + Ollama (for Gemma).`);
+      print();
+      print(`  Pull Gemma models into Ollama (first time, before air-gapping):`);
+      print(`    ${cyan(`ollama pull ${gemmaModelHigh}`)}`);
+      print(`    ${cyan(`ollama pull ${gemmaModelMedium}`)}`);
+      print(`    ${cyan(`ollama pull ${gemmaModelFast}`)}`);
+    } else {
+      print(`  ${bold("To start CyberTip Triage:")} `);
+      print();
+      print(`    ${cyan("./start.sh")}`);
+      print();
+      print(`  Or manually:`);
+      print(`    ${cyan("docker compose up -d")}`);
+    }
     print();
     print(`  Then open: ${bold(`http://localhost:${port}/dashboard`)}`);
   } else {
     print(`  ${bold("To start CyberTip Triage:")} `);
     print();
+    if (offlineMode) {
+      print(`  Ensure Ollama (or your local LLM server) is running first:`);
+      print(`    ${cyan("ollama serve")}`);
+      print();
+    }
     print(`    ${cyan("npm install")}`);
     print(`    ${cyan("npm run build")}`);
     print(`    ${cyan("npm start")}`);
@@ -494,12 +728,24 @@ Notes: Sample tip created by setup wizard.
   print();
   print(`  ${bold("Next steps (see SETUP_GUIDE.md):")}`);
   print(`  1. Verify the dashboard loads and shows the test tip`);
-  print(`  2. Request NCMEC API access if you don't have it`);
-  print(`  3. Have your legal counsel review the Wilson Ruling implementation`);
-  print(`  4. Run the full test suite: ${cyan("npm test")}`);
+  if (offlineMode) {
+    print(`  2. Place hash DB CSV exports in ${cyan(offlineHashDbPath)}`);
+    print(`     (ncmec_hashes.csv, projectvic_hashes.csv, iwf_hashes.csv, interpol_icse_hashes.csv)`);
+    print(`  3. Verify Gemma responds: curl ${localLlmBaseUrl.replace("/v1", "")}/api/tags`);
+    print(`  4. Have your legal counsel review the Wilson Ruling implementation`);
+    print(`  5. Run the full test suite: ${cyan("npm test")}`);
+  } else {
+    print(`  2. Request NCMEC API access if you don't have it`);
+    print(`  3. Have your legal counsel review the Wilson Ruling implementation`);
+    print(`  4. Run the full test suite: ${cyan("npm test")}`);
+  }
   print();
   warn("Keep your .env file secure — it contains API keys and passwords.");
   warn("Never commit .env to version control.");
+  if (offlineMode) {
+    warn("In offline mode: verify network guard is active at /health endpoint after startup.");
+    warn("Hash DB files must be loaded before going air-gap — they cannot be downloaded offline.");
+  }
   print();
 
   rl.close();

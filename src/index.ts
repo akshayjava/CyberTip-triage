@@ -28,11 +28,26 @@ import { startClusterScheduler, stopClusterScheduler } from "./jobs/cluster_scan
 import { startDigestScheduler } from "./jobs/nightly_digest.js";
 import { hydrateFromDB } from "./compliance/circuit_guide.js";
 import { validateLLMConfig, getLLMConfigSummary } from "./llm/index.js";
+import { isOfflineMode, validateOfflineConfig, getOfflineSummary } from "./offline/offline_config.js";
+import { installNetworkGuard, getBlockedCalls } from "./utils/network_guard.js";
+import { reloadDatabases } from "./tools/hash/offline_hash_db.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env["PORT"] ?? "3000");
 
 async function main(): Promise<void> {
+  // ── Offline / Air-Gap mode — must be first ────────────────────────────────
+  if (isOfflineMode()) {
+    installNetworkGuard(); // blocks all external fetch() calls before any SDKs initialize
+
+    const offlineResult = validateOfflineConfig();
+    if (!offlineResult.ok) {
+      console.error("[OFFLINE] Fatal configuration errors — cannot start in offline mode:");
+      for (const e of offlineResult.errors) console.error(`  ERROR: ${e}`);
+      process.exit(1);
+    }
+  }
+
   const config = loadConfig();
   const app = express();
 
@@ -70,7 +85,15 @@ async function main(): Promise<void> {
 
   // Health check
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", ts: new Date().toISOString(), llm: getLLMConfigSummary() });
+    res.json({
+      status: "ok",
+      ts: new Date().toISOString(),
+      llm: getLLMConfigSummary(),
+      ...(isOfflineMode() ? {
+        offline: getOfflineSummary(),
+        blocked_calls: getBlockedCalls().length,
+      } : {}),
+    });
   });
 
   // Start server
@@ -114,6 +137,14 @@ async function main(): Promise<void> {
     stopClusterScheduler();
     process.exit(0);
   });
+
+  // Reload offline hash databases on SIGHUP (e.g. after updating CSV files)
+  if (isOfflineMode()) {
+    process.on("SIGHUP", () => {
+      console.log("[OFFLINE] SIGHUP received — reloading hash databases");
+      reloadDatabases();
+    });
+  }
 }
 
 main().catch((err) => {
