@@ -1,7 +1,7 @@
-## 2025-05-21 - Critical Privilege Escalation in Setup Routes
-**Vulnerability:** The `POST /api/setup/save` endpoint, intended for initial system configuration, was accessible to any authenticated user (or anyone in dev mode). This allowed low-privileged users (e.g., investigators) or attackers with a valid token to overwrite the `.env` file, potentially changing the database URL, JWT secret, or other critical configurations, leading to full system takeover.
-**Learning:** Middleware-based authentication (like `authMiddleware`) often provides a baseline "is authenticated" check but does not inherently enforce role-based access control (RBAC) for specific sensitive endpoints. Developers might assume that "authenticated" implies "safe," especially for setup/admin routes, but explicit role checks are mandatory.
+## 2026-05-22 - Insecure Randomness in Setup Secrets
+**Vulnerability:** The `generateSecret` function in `src/api/setup_routes.ts` used `Math.random()` and `Date.now()` to create cryptographic secrets (JWT keys, DB passwords). This is predictable and lacks sufficient entropy for security-critical values.
+**Learning:** `Math.random()` is not cryptographically secure. Relying on it for generating secrets, tokens, or keys introduces a vulnerability where an attacker could potentially predict the generated values if they can narrow down the generation timestamp or seed state.
 **Prevention:**
-1.  **Defense in Depth:** Always apply `requireRole("admin")` (or stricter) to sensitive configuration endpoints.
-2.  **Environment Awareness:** Disable setup routes entirely after the initial configuration is complete (e.g., using a flag in `.env` or checking if `.env` exists).
-3.  **Strict Middleware:** Ensure that critical routes have explicit authorization guards, not just authentication guards.
+1.  **Use `crypto.randomBytes`:** Always use `crypto.randomBytes(length)` (or `crypto.getRandomValues` in browser contexts) for generating any security-critical random values.
+2.  **Linting Rules:** Ensure linting rules (like `sonarjs/no-insecure-random`) are active to catch usages of `Math.random()` in sensitive contexts.
+3.  **Review Secret Generation:** Periodically audit codebase for `Math.random()` usage, especially in authentication or configuration modules.
