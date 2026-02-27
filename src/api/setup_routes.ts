@@ -13,7 +13,7 @@ import type { Application, Request, Response } from "express";
 import { writeFile, access, readdir, stat } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { createHash } from "crypto";
+import { randomBytes } from "crypto";
 import { requireRole } from "../auth/middleware.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -379,10 +379,10 @@ function buildForensicsPlatformsValue(tools?: string[]): string {
 }
 
 function generateSecret(length = 32): string {
-  return createHash("sha256")
-    .update(Math.random().toString() + Date.now().toString())
-    .digest("hex")
-    .slice(0, length);
+  // Use crypto.randomBytes for secure random generation
+  // Since 1 byte = 2 hex chars, we generate enough bytes
+  const bytes = randomBytes(Math.ceil(length / 2));
+  return bytes.toString("hex").slice(0, length);
 }
 
 // ── Test data setup ───────────────────────────────────────────────────────────
