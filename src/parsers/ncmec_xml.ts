@@ -22,76 +22,72 @@ function getCachedRegex(key: string, source: string, flags: string): RegExp {
   return regex;
 }
 
-/**
- * Helper to handle XML edge cases like CDATA and comments by using placeholders
- * before applying regex matching. This prevents brittleness when tags appear
- * inside comments or CDATA.
- */
-function withPlaceholders<T>(
-  xml: string,
-  fn: (safeXml: string, restore: (text: string, stripCdata?: boolean) => string) => T
-): T {
-  const cdatas: string[] = [];
-  const comments: string[] = [];
+class XmlContext {
+  public safeXml: string;
+  private cdatas: string[] = [];
+  private comments: string[] = [];
 
-  const safeXml = xml
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, (match) => {
-      cdatas.push(match);
-      return `__NCMEC_XML_CDATA_${cdatas.length - 1}__`;
-    })
-    .replace(/<!--[\s\S]*?-->/g, (match) => {
-      comments.push(match);
-      return `__NCMEC_XML_COMMENT_${comments.length - 1}__`;
-    });
+  constructor(rawXml: string) {
+    this.safeXml = rawXml
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, (match) => {
+        this.cdatas.push(match);
+        return `__NCMEC_XML_CDATA_${this.cdatas.length - 1}__`;
+      })
+      .replace(/<!--[\s\S]*?-->/g, (match) => {
+        this.comments.push(match);
+        return `__NCMEC_XML_COMMENT_${this.comments.length - 1}__`;
+      });
+  }
 
-  const restore = (text: string, stripCdata = true) => {
+  restore(text: string, stripCdata = true): string {
     return text
       .replace(/__NCMEC_XML_CDATA_(\d+)__/g, (_, id) => {
-        const full = cdatas[parseInt(id, 10)];
+        const full = this.cdatas[parseInt(id, 10)];
         return stripCdata ? full.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1") : full;
       })
       .replace(/__NCMEC_XML_COMMENT_(\d+)__/g, (_, id) => {
-        return stripCdata ? "" : comments[parseInt(id, 10)];
+        return stripCdata ? "" : this.comments[parseInt(id, 10)];
       });
-  };
-
-  return fn(safeXml, restore);
+  }
 }
 
-function xmlText(xml: string, tag: string): string | undefined {
-  return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = getCachedRegex(
-      `text:${tag}`,
-      `<${tag}(?![a-zA-Z0-9])([^>]*)>([\\s\\S]*?)<\\/${tag}>`,
-      "i"
-    );
-    const m = pattern.exec(safeXml);
-    return m ? restore(m[2]).trim() || undefined : undefined;
-  });
+function xmlText(safeXmlSnippet: string, tag: string, ctx: XmlContext): string | undefined {
+  const pattern = getCachedRegex(
+    `text:${tag}`,
+    `<${tag}(?![a-zA-Z0-9])([^>]*)>([\\s\\S]*?)<\\/${tag}>`,
+    "i"
+  );
+  const m = pattern.exec(safeXmlSnippet);
+  return m ? ctx.restore(m[2]).trim() || undefined : undefined;
 }
 
-function xmlAttr(xml: string, tag: string, attr: string): string | undefined {
-  return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = getCachedRegex(
-      `attr:${tag}:${attr}`,
-      `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}=(?:"([^"]*)"|'([^']*)')`,
-      "i"
-    );
-    const m = pattern.exec(safeXml);
-    return m ? restore(m[1] ?? m[2]).trim() || undefined : undefined;
-  });
+function xmlAttr(safeXmlSnippet: string, tag: string, attr: string, ctx: XmlContext): string | undefined {
+  const pattern = getCachedRegex(
+    `attr:${tag}:${attr}`,
+    `<${tag}(?![a-zA-Z0-9])[^>]*?\\s${attr}=(?:"([^"]*)"|'([^']*)')`,
+    "i"
+  );
+  const m = pattern.exec(safeXmlSnippet);
+  return m ? ctx.restore(m[1] ?? m[2]).trim() || undefined : undefined;
 }
 
+function xmlAllSafe(safeXml: string, tag: string): string[] {
+  const pattern = getCachedRegex(
+    `all:${tag}`,
+    `<${tag}(?![a-zA-Z0-9])[^>]*>[\\s\\S]*?<\\/${tag}>`,
+    "gi"
+  );
+  pattern.lastIndex = 0; // Reset state for global regex reused from cache
+  return [...safeXml.matchAll(pattern)].map((m) => m[0]);
+}
+
+/**
+ * Public helper for legacy compatibility or external use.
+ * Internally uses XmlContext but returns restored strings immediately.
+ */
 export function xmlAll(xml: string, tag: string): string[] {
-  return withPlaceholders(xml, (safeXml, restore) => {
-    const pattern = getCachedRegex(
-      `all:${tag}`,
-      `<${tag}(?![a-zA-Z0-9])[^>]*>[\\s\\S]*?<\\/${tag}>`,
-      "gi"
-    );
-    pattern.lastIndex = 0; // Reset state for global regex reused from cache
-    return [...safeXml.matchAll(pattern)].map((m) => restore(m[0], false));
-  });
+  const ctx = new XmlContext(xml);
+  return xmlAllSafe(ctx.safeXml, tag).map((s) => ctx.restore(s, false));
 }
 
 function parseXmlBoolean(val: string | undefined): { value: boolean; found: boolean } {
@@ -105,17 +101,17 @@ function parseXmlBoolean(val: string | undefined): { value: boolean; found: bool
 
 // ── File entry parser ─────────────────────────────────────────────────────────
 
-function parseXmlFileEntry(fileXml: string): NcmecFileMeta {
+function parseXmlFileEntry(safeFileSnippet: string, ctx: XmlContext): NcmecFileMeta {
   const filename =
-    xmlText(fileXml, "FileName") ??
-    xmlText(fileXml, "OriginalFileName") ??
+    xmlText(safeFileSnippet, "FileName", ctx) ??
+    xmlText(safeFileSnippet, "OriginalFileName", ctx) ??
     undefined;
 
-  const espViewedRaw = xmlText(fileXml, "ViewedByEsp") ?? xmlText(fileXml, "EspViewed");
+  const espViewedRaw = xmlText(safeFileSnippet, "ViewedByEsp", ctx) ?? xmlText(safeFileSnippet, "EspViewed", ctx);
   const espViewedResult = parseXmlBoolean(espViewedRaw);
 
   const publicRaw =
-    xmlText(fileXml, "PubliclyAvailable") ?? xmlText(fileXml, "IsPublic");
+    xmlText(safeFileSnippet, "PubliclyAvailable", ctx) ?? xmlText(safeFileSnippet, "IsPublic", ctx);
   const publicResult = parseXmlBoolean(publicRaw);
 
   const ext = filename?.split(".").pop()?.toLowerCase() ?? "";
@@ -128,35 +124,38 @@ function parseXmlFileEntry(fileXml: string): NcmecFileMeta {
 
   return {
     filename,
-    file_size: xmlText(fileXml, "FileSize"),
+    file_size: xmlText(safeFileSnippet, "FileSize", ctx),
     media_type,
     esp_viewed: espViewedResult.value,
     esp_viewed_missing: !espViewedResult.found,
     esp_categorized_as:
-      xmlText(fileXml, "EspCategory") ??
-      xmlText(fileXml, "Classification") ??
+      xmlText(safeFileSnippet, "EspCategory", ctx) ??
+      xmlText(safeFileSnippet, "Classification", ctx) ??
       undefined,
     publicly_available: publicResult.value,
-    hash_md5: xmlText(fileXml, "MD5"),
-    hash_sha1: xmlText(fileXml, "SHA1") ?? xmlText(fileXml, "Sha1"),
-    hash_sha256: xmlText(fileXml, "SHA256") ?? xmlText(fileXml, "Sha256"),
-    photodna_hash: xmlText(fileXml, "PhotoDNA"),
+    hash_md5: xmlText(safeFileSnippet, "MD5", ctx),
+    hash_sha1: xmlText(safeFileSnippet, "SHA1", ctx) ?? xmlText(safeFileSnippet, "Sha1", ctx),
+    hash_sha256: xmlText(safeFileSnippet, "SHA256", ctx) ?? xmlText(safeFileSnippet, "Sha256", ctx),
+    photodna_hash: xmlText(safeFileSnippet, "PhotoDNA", ctx),
   };
 }
 
 // ── Main XML parser ───────────────────────────────────────────────────────────
 
 export function parseNcmecXml(xmlString: string): NcmecPdfParsed {
+  const ctx = new XmlContext(xmlString);
+  const { safeXml } = ctx;
+
   const ncmecTipNumber =
-    xmlText(xmlString, "TiplineNumber") ??
-    xmlText(xmlString, "ReportId") ??
-    xmlAttr(xmlString, "Report", "id") ??
+    xmlText(safeXml, "TiplineNumber", ctx) ??
+    xmlText(safeXml, "ReportId", ctx) ??
+    xmlAttr(safeXml, "Report", "id", ctx) ??
     undefined;
 
   const urgentRaw =
-    xmlText(xmlString, "IsUrgent") ??
-    xmlText(xmlString, "Priority") ??
-    xmlAttr(xmlString, "Report", "urgent");
+    xmlText(safeXml, "IsUrgent", ctx) ??
+    xmlText(safeXml, "Priority", ctx) ??
+    xmlAttr(safeXml, "Report", "urgent", ctx);
   const ncmecUrgentFlag =
     urgentRaw?.toLowerCase() === "true" ||
     urgentRaw?.toLowerCase() === "yes" ||
@@ -164,47 +163,49 @@ export function parseNcmecXml(xmlString: string): NcmecPdfParsed {
 
   // Bundled report detection
   const bundledCountRaw =
-    xmlText(xmlString, "BundledReportCount") ??
-    xmlText(xmlString, "IncidentCount");
+    xmlText(safeXml, "BundledReportCount", ctx) ??
+    xmlText(safeXml, "IncidentCount", ctx);
   const bundledCount = bundledCountRaw ? parseInt(bundledCountRaw, 10) : undefined;
   const isBundled = !!(bundledCount && bundledCount > 1);
 
   // Reporter / ESP
   const espName =
-    xmlText(xmlString, "ReportingEspName") ??
-    xmlText(xmlString, "EspName") ??
-    xmlText(xmlString, "ReportingEntity");
+    xmlText(safeXml, "ReportingEspName", ctx) ??
+    xmlText(safeXml, "EspName", ctx) ??
+    xmlText(safeXml, "ReportingEntity", ctx);
 
   const reporter: Reporter = {
     type: "NCMEC",
     esp_name: espName,
     originating_country:
-      (xmlText(xmlString, "OriginCountry") ??
-        xmlText(xmlString, "Country"))?.slice(0, 2).toUpperCase() as
+      (xmlText(safeXml, "OriginCountry", ctx) ??
+        xmlText(safeXml, "Country", ctx))?.slice(0, 2).toUpperCase() as
         | `${string}${string}`
         | undefined,
   };
 
   // Files
-  const fileEntries = [
-    ...xmlAll(xmlString, "FileDetails"),
-    ...xmlAll(xmlString, "File"),
-    ...xmlAll(xmlString, "Attachment"),
+  const fileSnippets = [
+    ...xmlAllSafe(safeXml, "FileDetails"),
+    ...xmlAllSafe(safeXml, "File"),
+    ...xmlAllSafe(safeXml, "Attachment"),
   ];
   const files: NcmecFileMeta[] =
-    fileEntries.length > 0
-      ? fileEntries.map(parseXmlFileEntry)
+    fileSnippets.length > 0
+      ? fileSnippets.map((s) => parseXmlFileEntry(s, ctx))
       : []; // No files in tip (text-only report)
 
   // Section-equivalent fields
   const incidentDesc =
-    xmlText(xmlString, "IncidentDescription") ??
-    xmlText(xmlString, "Description") ??
-    xmlText(xmlString, "ContentDescription") ??
+    xmlText(safeXml, "IncidentDescription", ctx) ??
+    xmlText(safeXml, "Description", ctx) ??
+    xmlText(safeXml, "ContentDescription", ctx) ??
     "";
 
-  const relatedTipNumbers = xmlAll(xmlString, "RelatedReport")
-    .map((r) => xmlText(r, "TiplineNumber") ?? "")
+  // Related reports - iterate snippets, not full restore
+  const relatedSnippets = xmlAllSafe(safeXml, "RelatedReport");
+  const relatedTipNumbers = relatedSnippets
+    .map((s) => xmlText(s, "TiplineNumber", ctx) ?? "")
     .filter(Boolean);
 
   return {
@@ -217,49 +218,49 @@ export function parseNcmecXml(xmlString: string): NcmecPdfParsed {
       esp_name: espName,
       incident_description: incidentDesc,
       incident_time:
-        xmlText(xmlString, "IncidentDateTime") ??
-        xmlText(xmlString, "DateOfIncident") ??
+        xmlText(safeXml, "IncidentDateTime", ctx) ??
+        xmlText(safeXml, "DateOfIncident", ctx) ??
         undefined,
       subject_email:
-        xmlText(xmlString, "SubjectEmail") ??
-        xmlText(xmlString, "EmailAddress") ??
+        xmlText(safeXml, "SubjectEmail", ctx) ??
+        xmlText(safeXml, "EmailAddress", ctx) ??
         undefined,
       subject_username:
-        xmlText(xmlString, "SubjectUsername") ??
-        xmlText(xmlString, "Username") ??
+        xmlText(safeXml, "SubjectUsername", ctx) ??
+        xmlText(safeXml, "Username", ctx) ??
         undefined,
       subject_ip:
-        xmlText(xmlString, "SubjectIpAddress") ??
-        xmlText(xmlString, "IpAddress") ??
+        xmlText(safeXml, "SubjectIpAddress", ctx) ??
+        xmlText(safeXml, "IpAddress", ctx) ??
         undefined,
       files,
     },
     section_b: {
       country:
-        xmlText(xmlString, "IpCountry") ??
-        xmlText(xmlString, "GeolocationCountry") ??
+        xmlText(safeXml, "IpCountry", ctx) ??
+        xmlText(safeXml, "GeolocationCountry", ctx) ??
         undefined,
       city:
-        xmlText(xmlString, "IpCity") ??
-        xmlText(xmlString, "GeolocationCity") ??
+        xmlText(safeXml, "IpCity", ctx) ??
+        xmlText(safeXml, "GeolocationCity", ctx) ??
         undefined,
       region:
-        xmlText(xmlString, "IpState") ??
-        xmlText(xmlString, "GeolocationRegion") ??
+        xmlText(safeXml, "IpState", ctx) ??
+        xmlText(safeXml, "GeolocationRegion", ctx) ??
         undefined,
-      isp: xmlText(xmlString, "Isp") ?? xmlText(xmlString, "IspName") ?? undefined,
+      isp: xmlText(safeXml, "Isp", ctx) ?? xmlText(safeXml, "IspName", ctx) ?? undefined,
       ip_geolocation:
-        xmlText(xmlString, "Geolocation") ??
-        xmlText(xmlString, "GeoData") ??
+        xmlText(safeXml, "Geolocation", ctx) ??
+        xmlText(safeXml, "GeoData", ctx) ??
         undefined,
     },
     section_c: {
       additional_info:
-        xmlText(xmlString, "AdditionalInformation") ??
-        xmlText(xmlString, "Notes") ??
+        xmlText(safeXml, "AdditionalInformation", ctx) ??
+        xmlText(safeXml, "Notes", ctx) ??
         undefined,
       related_tip_numbers: relatedTipNumbers,
-      notes: xmlText(xmlString, "InvestigatorNotes") ?? undefined,
+      notes: xmlText(safeXml, "InvestigatorNotes", ctx) ?? undefined,
     },
   };
 }
