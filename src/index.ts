@@ -50,6 +50,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const app = express();
+  app.disable("x-powered-by");
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
