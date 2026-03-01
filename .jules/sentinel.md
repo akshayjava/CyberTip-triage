@@ -5,3 +5,8 @@
 1.  **Use `crypto.randomBytes`:** Always use `crypto.randomBytes(length)` (or `crypto.getRandomValues` in browser contexts) for generating any security-critical random values.
 2.  **Linting Rules:** Ensure linting rules (like `sonarjs/no-insecure-random`) are active to catch usages of `Math.random()` in sensitive contexts.
 3.  **Review Secret Generation:** Periodically audit codebase for `Math.random()` usage, especially in authentication or configuration modules.
+
+## 2026-03-01 - Insecure Randomness in job IDs
+**Vulnerability:** The `enqueueTip` function in `src/ingestion/queue.ts` used `Math.random()` to create job IDs, which lacks sufficient entropy.
+**Learning:** Relying on `Math.random()` for generating any IDs, even in a queue context, is a predictable approach and not considered a security best practice for uniqueness or entropy.
+**Prevention:** Replace with `crypto.randomUUID()`.
