@@ -42,6 +42,8 @@ export interface ListTipsOptions {
   is_bundled?: boolean;
   /** Exclude large body fields (raw_body, normalized_body) for performance */
   exclude_body?: boolean;
+  /** Exclude file attachments array to prevent over-fetching when files are unneeded */
+  exclude_files?: boolean;
 }
 
 export interface ListTipsResult {
@@ -322,6 +324,11 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       tips = tips.map((t) => ({ ...t, raw_body: "", normalized_body: "" }));
     }
 
+    // ⚡ Bolt Optimization: Exclude files (memory mode)
+    if (opts.exclude_files) {
+      tips = tips.map((t) => ({ ...t, files: [] }));
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -390,7 +397,8 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   // For list view, fetch files inline (one additional query batched)
   const tipIds = dataResult.rows.map((r) => r.tip_id);
   let allFiles: FileRow[] = [];
-  if (tipIds.length > 0) {
+  // ⚡ Bolt Optimization: Skip fetching files if not needed
+  if (!opts.exclude_files && tipIds.length > 0) {
     const filesResult = await pool.query<FileRow>(
       `SELECT * FROM tip_files WHERE tip_id = ANY($1) ORDER BY created_at`,
       [tipIds]
