@@ -422,8 +422,8 @@ export async function runClusterScan(): Promise<ClusterScanResult> {
   const isPostgres = process.env["DB_MODE"] === "postgres";
 
   // Load all tips into a map for fast lookup during cluster application
-  // ⚡ Bolt Optimization: Exclude body to save ~200MB memory during scan
-  const { tips: allTipsArr } = await listTips({ limit: 20_000, exclude_body: true });
+  // ⚡ Bolt Optimization: Exclude body and files to save ~200MB memory and avoid over-fetching
+  const { tips: allTipsArr } = await listTips({ limit: 20_000, exclude_body: true, exclude_files: true });
   const allTipsMap = new Map(allTipsArr.map(t => [t.tip_id, t]));
 
   // Run pattern detection
