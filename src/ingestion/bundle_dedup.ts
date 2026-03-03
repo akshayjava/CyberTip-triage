@@ -31,7 +31,7 @@
  */
 
 import { createHash } from "crypto";
-import { listTips, upsertTip, getTipById } from "../db/tips.js";
+import { listTips, upsertTip, getTipById, getBundleStatsData } from "../db/tips.js";
 import { appendAuditEntry } from "../compliance/audit.js";
 import type { CyberTip } from "../models/index.js";
 
@@ -278,24 +278,11 @@ export interface BundleStats {
 }
 
 export async function getBundleStats(): Promise<BundleStats> {
-  const { tips } = await listTips({ is_bundled: true, limit: 10_000, exclude_body: true });
-  const bundles  = tips.filter((t: CyberTip) => t.status !== "duplicate");
-
-  let largest: { tip_id: string; count: number } | null = null;
-  let totalIncidents = 0;
-
-  for (const b of bundles) {
-    const count = b.bundled_incident_count ?? 1;
-    totalIncidents += count;
-    if (!largest || count > largest.count) {
-      largest = { tip_id: b.tip_id, count };
-    }
-  }
+  // ⚡ Bolt Optimization: Use optimized database aggregates instead of fetching and hydrating 10,000 records
+  const data = await getBundleStatsData();
 
   return {
-    unique_bundles:  bundles.length,
-    total_incidents: totalIncidents,
-    largest_bundle:  largest,
-    cache_size:      fingerprintCache.size,
+    ...data,
+    cache_size: fingerprintCache.size,
   };
 }
