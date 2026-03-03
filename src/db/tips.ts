@@ -579,6 +579,58 @@ export async function getTipStats(): Promise<TipStats> {
   };
 }
 
+export async function getBundleStatsData(): Promise<{
+  unique_bundles: number;
+  total_incidents: number;
+  largest_bundle: { tip_id: string; count: number } | null;
+}> {
+  if (!isPostgres()) {
+    const tips = Array.from(memStore.values());
+    const bundles = tips.filter((t) => t.is_bundled === true && t.status !== "duplicate");
+
+    let largest: { tip_id: string; count: number } | null = null;
+    let totalIncidents = 0;
+
+    for (const b of bundles) {
+      const count = b.bundled_incident_count ?? 1;
+      totalIncidents += count;
+      if (!largest || count > largest.count) {
+        largest = { tip_id: b.tip_id, count };
+      }
+    }
+
+    return {
+      unique_bundles: bundles.length,
+      total_incidents: totalIncidents,
+      largest_bundle: largest,
+    };
+  }
+
+  const pool = getPool();
+  const [aggsRes, maxRes] = await Promise.all([
+    pool.query<{ count: string; total: string }>(
+      `SELECT COUNT(*) as count, SUM(COALESCE(bundled_incident_count, 1)) as total
+       FROM cyber_tips
+       WHERE is_bundled = true AND status != 'duplicate'`
+    ),
+    pool.query<{ tip_id: string; count: string }>(
+      `SELECT tip_id, COALESCE(bundled_incident_count, 1) as count
+       FROM cyber_tips
+       WHERE is_bundled = true AND status != 'duplicate'
+       ORDER BY COALESCE(bundled_incident_count, 1) DESC
+       LIMIT 1`
+    ),
+  ]);
+
+  const unique_bundles = parseInt(aggsRes.rows[0]?.count ?? "0", 10);
+  const total_incidents = parseInt(aggsRes.rows[0]?.total ?? "0", 10);
+  const largest_bundle = maxRes.rows.length > 0
+    ? { tip_id: maxRes.rows[0]!.tip_id, count: parseInt(maxRes.rows[0]!.count, 10) }
+    : null;
+
+  return { unique_bundles, total_incidents, largest_bundle };
+}
+
 // ── Internal assembly helpers ─────────────────────────────────────────────────
 
 interface TipRow {
