@@ -218,114 +218,117 @@ async function aggregateFromPostgres(
   const toISO   = to.toISOString();
   const pool = getPool();
 
-  // Total tips
-  const [totalRes, sourceRes, catRes, tierRes, statusRes, preserveRes, warrantRes, slaRes] =
-    await Promise.all([
-      pool.query<{ count: string }>(
-        `SELECT COUNT(*) as count FROM cyber_tips WHERE received_at BETWEEN $1 AND $2`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ source: string; count: string }>(
-        `SELECT source, COUNT(*) as count FROM cyber_tips
-         WHERE received_at BETWEEN $1 AND $2 GROUP BY source`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ cat: string; count: string }>(
-        `SELECT classification->>'offense_category' as cat, COUNT(*) as count
-         FROM cyber_tips WHERE received_at BETWEEN $1 AND $2
-           AND classification IS NOT NULL
-         GROUP BY classification->>'offense_category'`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ tier: string; count: string }>(
-        `SELECT priority->>'tier' as tier, COUNT(*) as count
-         FROM cyber_tips WHERE received_at BETWEEN $1 AND $2
-           AND priority IS NOT NULL
-         GROUP BY priority->>'tier'`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ status: string; count: string }>(
-        `SELECT status, COUNT(*) as count FROM cyber_tips
-         WHERE received_at BETWEEN $1 AND $2 GROUP BY status`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ status: string; count: string }>(
-        `SELECT pr.status, COUNT(*) as count
-         FROM preservation_requests pr
-         JOIN cyber_tips ct ON pr.tip_id = ct.tip_id
-         WHERE ct.received_at BETWEEN $1 AND $2
-         GROUP BY pr.status`,
-        [fromISO, toISO]
-      ),
-      pool.query<{ status: string; count: string }>(
-        `SELECT warrant_status as status, COUNT(*) as count
-         FROM tip_files tf
-         JOIN cyber_tips ct ON tf.tip_id = ct.tip_id
-         WHERE ct.received_at BETWEEN $1 AND $2
-           AND warrant_status != 'not_needed'
-         GROUP BY warrant_status`,
-        [fromISO, toISO]
-      ),
-      // SLA: average hours from received_at to first assignment event in audit
-      pool.query<{ tier: string; avg_hours: string; sla_exceeded: string }>(
-        `SELECT
-           ct.priority->>'tier' as tier,
-           AVG(EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600) as avg_hours,
-           COUNT(*) FILTER (WHERE
-             CASE WHEN ct.priority->>'tier' = 'IMMEDIATE'
-                  THEN EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600 > 1
-                  WHEN ct.priority->>'tier' = 'URGENT'
-                  THEN EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600 > 24
-                  ELSE FALSE END
-           ) as sla_exceeded
-         FROM cyber_tips ct
-         JOIN audit_log al ON ct.tip_id = al.tip_id
-           AND al.agent = 'HumanAction'
-           AND al.summary LIKE 'Tip assigned%'
-         WHERE ct.received_at BETWEEN $1 AND $2
-         GROUP BY ct.priority->>'tier'`,
-        [fromISO, toISO]
-      ),
-    ]);
+  // ⚡ Bolt Optimization: Combined 5 concurrent queries into 1 using FILTER aggregation
+  const [cyberTipsRes, preserveRes, warrantRes, slaRes] = await Promise.all([
+    pool.query<{
+      total_count: string;
+      ncmec_count: string;
+      esp_count: string;
+      pub_count: string;
+      csam_count: string;
+      child_grooming_count: string;
+      online_enticement_count: string;
+      child_sex_trafficking_count: string;
+      cyber_exploitation_count: string;
+      sextortion_count: string;
+      financial_fraud_count: string;
+      other_count: string;
+      immediate_count: string;
+      paused_count: string;
+      initiated_count: string;
+      completed_count: string;
+      referred_count: string;
+    }>(
+      `SELECT
+         COUNT(*) as total_count,
+         COUNT(*) FILTER (WHERE source IN ('NCMEC_IDS', 'NCMEC_API')) as ncmec_count,
+         COUNT(*) FILTER (WHERE source = 'ESP_direct') as esp_count,
+         COUNT(*) FILTER (WHERE source = 'public_web_form') as pub_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'CSAM') as csam_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'CHILD_GROOMING') as child_grooming_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'ONLINE_ENTICEMENT') as online_enticement_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'CHILD_SEX_TRAFFICKING') as child_sex_trafficking_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'CYBER_EXPLOITATION') as cyber_exploitation_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'SEXTORTION') as sextortion_count,
+         COUNT(*) FILTER (WHERE classification->>'offense_category' = 'FINANCIAL_FRAUD') as financial_fraud_count,
+         COUNT(*) FILTER (WHERE classification IS NOT NULL AND (classification->>'offense_category' IS NULL OR classification->>'offense_category' NOT IN ('CSAM', 'CHILD_GROOMING', 'ONLINE_ENTICEMENT', 'CHILD_SEX_TRAFFICKING', 'CYBER_EXPLOITATION', 'SEXTORTION', 'FINANCIAL_FRAUD'))) as other_count,
+         COUNT(*) FILTER (WHERE priority->>'tier' = 'IMMEDIATE') as immediate_count,
+         COUNT(*) FILTER (WHERE priority->>'tier' = 'PAUSED') as paused_count,
+         COUNT(*) FILTER (WHERE status != 'pending') as initiated_count,
+         COUNT(*) FILTER (WHERE status = 'closed') as completed_count,
+         COUNT(*) FILTER (WHERE status = 'referred_out') as referred_count
+       FROM cyber_tips
+       WHERE received_at BETWEEN $1 AND $2`,
+      [fromISO, toISO]
+    ),
+    pool.query<{ status: string; count: string }>(
+      `SELECT pr.status, COUNT(*) as count
+       FROM preservation_requests pr
+       JOIN cyber_tips ct ON pr.tip_id = ct.tip_id
+       WHERE ct.received_at BETWEEN $1 AND $2
+       GROUP BY pr.status`,
+      [fromISO, toISO]
+    ),
+    pool.query<{ status: string; count: string }>(
+      `SELECT warrant_status as status, COUNT(*) as count
+       FROM tip_files tf
+       JOIN cyber_tips ct ON tf.tip_id = ct.tip_id
+       WHERE ct.received_at BETWEEN $1 AND $2
+         AND warrant_status != 'not_needed'
+       GROUP BY warrant_status`,
+      [fromISO, toISO]
+    ),
+    // SLA: average hours from received_at to first assignment event in audit
+    pool.query<{ tier: string; avg_hours: string; sla_exceeded: string }>(
+      `SELECT
+         ct.priority->>'tier' as tier,
+         AVG(EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600) as avg_hours,
+         COUNT(*) FILTER (WHERE
+           CASE WHEN ct.priority->>'tier' = 'IMMEDIATE'
+                THEN EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600 > 1
+                WHEN ct.priority->>'tier' = 'URGENT'
+                THEN EXTRACT(EPOCH FROM (al.timestamp - ct.received_at)) / 3600 > 24
+                ELSE FALSE END
+         ) as sla_exceeded
+       FROM cyber_tips ct
+       JOIN audit_log al ON ct.tip_id = al.tip_id
+         AND al.agent = 'HumanAction'
+         AND al.summary LIKE 'Tip assigned%'
+       WHERE ct.received_at BETWEEN $1 AND $2
+       GROUP BY ct.priority->>'tier'`,
+      [fromISO, toISO]
+    ),
+  ]);
 
-  const total = parseInt(totalRes.rows[0]?.count ?? "0", 10);
+  const row = cyberTipsRes.rows[0] ?? {} as Record<string, string>;
+
+  const total = parseInt(row.total_count ?? "0", 10);
 
   // Source breakdown
-  let ncmec = 0, esp = 0, pub = 0;
-  for (const r of sourceRes.rows) {
-    const c = parseInt(r.count, 10);
-    if (r.source === "NCMEC_IDS" || r.source === "NCMEC_API") ncmec += c;
-    else if (r.source === "ESP_direct") esp += c;
-    else if (r.source === "public_web_form") pub += c;
-  }
+  const ncmec = parseInt(row.ncmec_count ?? "0", 10);
+  const esp = parseInt(row.esp_count ?? "0", 10);
+  const pub = parseInt(row.pub_count ?? "0", 10);
 
   // Category breakdown
   const byCategory = {
-    csam: 0, child_grooming: 0, online_enticement: 0,
-    child_sex_trafficking: 0, cyber_exploitation: 0,
-    sextortion: 0, financial_fraud: 0, other: 0,
+    csam: parseInt(row.csam_count ?? "0", 10),
+    child_grooming: parseInt(row.child_grooming_count ?? "0", 10),
+    online_enticement: parseInt(row.online_enticement_count ?? "0", 10),
+    child_sex_trafficking: parseInt(row.child_sex_trafficking_count ?? "0", 10),
+    cyber_exploitation: parseInt(row.cyber_exploitation_count ?? "0", 10),
+    sextortion: parseInt(row.sextortion_count ?? "0", 10),
+    financial_fraud: parseInt(row.financial_fraud_count ?? "0", 10),
+    other: parseInt(row.other_count ?? "0", 10),
   };
-  for (const r of catRes.rows) {
-    const key = categorizeTip(r.cat ?? "OTHER");
-    byCategory[key] += parseInt(r.count, 10);
-  }
 
   // Tier breakdown
-  let immediate = 0, paused = 0;
-  for (const r of tierRes.rows) {
-    const c = parseInt(r.count, 10);
-    if (r.tier === "IMMEDIATE") immediate = c;
-    if (r.tier === "PAUSED")    paused = c;
-  }
+  const immediate = parseInt(row.immediate_count ?? "0", 10);
+  const paused = parseInt(row.paused_count ?? "0", 10);
 
   // Status breakdown
-  let initiated = 0, completed = 0, referred = 0;
-  for (const r of statusRes.rows) {
-    const c = parseInt(r.count, 10);
-    if (r.status !== "pending")         initiated += c;
-    if (r.status === "closed")          completed = c;
-    if (r.status === "referred_out")    referred = c;
-  }
+  const initiated = parseInt(row.initiated_count ?? "0", 10);
+  const completed = parseInt(row.completed_count ?? "0", 10);
+  const referred = parseInt(row.referred_count ?? "0", 10);
 
   // Preservation
   let presIssued = 0, presFulfilled = 0;
