@@ -607,25 +607,37 @@ export async function getBundleStatsData(): Promise<{
   }
 
   const pool = getPool();
-  const [aggsRes, maxRes] = await Promise.all([
-    pool.query<{ count: string; total: string }>(
-      `SELECT COUNT(*) as count, SUM(COALESCE(bundled_incident_count, 1)) as total
-       FROM cyber_tips
-       WHERE is_bundled = true AND status != 'duplicate'`
-    ),
-    pool.query<{ tip_id: string; count: string }>(
-      `SELECT tip_id, COALESCE(bundled_incident_count, 1) as count
+  // ⚡ Bolt Optimization: Combined 2 concurrent aggregate queries into 1 using CTEs
+  const result = await pool.query<{
+    count: string;
+    total: string;
+    max_tip_id: string | null;
+    max_count: string | null;
+  }>(
+    `WITH filtered_tips AS (
+       SELECT tip_id, COALESCE(bundled_incident_count, 1) as count
        FROM cyber_tips
        WHERE is_bundled = true AND status != 'duplicate'
-       ORDER BY COALESCE(bundled_incident_count, 1) DESC
-       LIMIT 1`
-    ),
-  ]);
+     ),
+     stats AS (
+       SELECT COUNT(*) as count, SUM(count) as total
+       FROM filtered_tips
+     ),
+     largest AS (
+       SELECT tip_id as max_tip_id, count as max_count
+       FROM filtered_tips
+       ORDER BY count DESC
+       LIMIT 1
+     )
+     SELECT stats.count, stats.total, largest.max_tip_id, largest.max_count
+     FROM stats LEFT JOIN largest ON true`
+  );
 
-  const unique_bundles = parseInt(aggsRes.rows[0]?.count ?? "0", 10);
-  const total_incidents = parseInt(aggsRes.rows[0]?.total ?? "0", 10);
-  const largest_bundle = maxRes.rows.length > 0
-    ? { tip_id: maxRes.rows[0]!.tip_id, count: parseInt(maxRes.rows[0]!.count, 10) }
+  const row = result.rows[0];
+  const unique_bundles = parseInt(row?.count ?? "0", 10);
+  const total_incidents = parseInt(row?.total ?? "0", 10);
+  const largest_bundle = row?.max_tip_id
+    ? { tip_id: row.max_tip_id, count: parseInt(row.max_count ?? "0", 10) }
     : null;
 
   return { unique_bundles, total_incidents, largest_bundle };
