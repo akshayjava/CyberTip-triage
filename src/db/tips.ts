@@ -610,7 +610,7 @@ export async function getBundleStatsData(): Promise<{
   // ⚡ Bolt Optimization: Combined 2 concurrent aggregate queries into 1 using CTEs
   const result = await pool.query<{
     count: string;
-    total: string;
+    total: string | null;
     max_tip_id: string | null;
     max_count: string | null;
   }>(
