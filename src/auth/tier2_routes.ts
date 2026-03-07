@@ -72,6 +72,7 @@ import {
 
 import { appendAuditEntry } from "../compliance/audit.js";
 import type { CyberTip, TipFile } from "../models/index.js";
+import { loginLimiter } from "../middleware/rate-limit.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -657,7 +658,7 @@ export function mountTier2Routes(app: Application): void {
   app.get("/api/reports/ojjdp/download", wrapAsync(handleOJJDPDownload));
 
   // 2.4 — Auth
-  app.post("/api/auth/login",           wrapAsync(handleLogin));
+  app.post("/api/auth/login",           loginLimiter, wrapAsync(handleLogin));
   app.post("/api/auth/refresh",         wrapAsync(handleRefresh));
   app.post("/api/auth/logout",          wrapAsync(handleLogout));
   app.get ("/api/auth/me",              wrapAsync(handleMe));
