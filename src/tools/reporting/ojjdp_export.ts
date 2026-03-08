@@ -124,7 +124,8 @@ async function aggregateFromMemory(
   period: OJJDPReportPeriod
 ): Promise<Partial<OJJDPQuarterlyReport>> {
   const { from, to } = periodToDateRange(period);
-  const { tips } = await listTips({ limit: 10_000 });
+  // ⚡ Bolt Optimization: exclude heavy body strings for large batch aggregation
+  const { tips } = await listTips({ limit: 10_000, exclude_body: true });
   const qTips = tips.filter((t) => inRange(t, from, to));
 
   const byCategory = {
