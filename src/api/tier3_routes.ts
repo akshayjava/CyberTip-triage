@@ -38,7 +38,9 @@ async function handleGetBundle(req: Request, res: Response): Promise<void> {
   if (!tip.is_bundled) { res.status(400).json({ error: "Tip is not a bundle" }); return; }
 
   // Count duplicates that reference this canonical
-  const { tips } = await listTips({ limit: 10_000 });
+  // ⚡ Bolt Optimization: exclude body and files to drastically reduce memory usage
+  // when loading up to 10,000 tips just to count duplicates.
+  const { tips } = await listTips({ limit: 10_000, exclude_body: true, exclude_files: true });
   const duplicates = tips.filter(
     (t) => t.status === "duplicate" && t.links?.duplicate_of === tip.tip_id
   );
@@ -80,7 +82,8 @@ async function handleHashStats(_req: Request, res: Response): Promise<void> {
   cutoff.setDate(cutoff.getDate() - 30);
   const cutoffISO = cutoff.toISOString();
 
-  const { tips } = await listTips({ limit: 10_000 });
+  // ⚡ Bolt Optimization: exclude heavy body strings when just computing hash stats
+  const { tips } = await listTips({ limit: 10_000, exclude_body: true });
   const recent = tips.filter((t) => t.received_at >= cutoffISO);
 
   let ncmecMatches = 0;

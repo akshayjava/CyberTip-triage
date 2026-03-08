@@ -9,3 +9,7 @@
 ## 2026-03-04 - Concurrent Reporting Queries Bottleneck
 **Learning:** Using `Promise.all` to run multiple concurrent aggregations against the same table (e.g., counting `cyber_tips` by different criteria) exhausts connection pools and causes unnecessary database overhead.
 **Action:** Consolidate concurrent statistical queries on the same table into a single query using PostgreSQL's `COUNT(*) FILTER (WHERE ...)` clause to perform all aggregations in one table scan.
+
+## 2026-03-05 - Memory Exhaustion from Bulk Tip Fetching
+**Learning:** Several analytical endpoints and batch operations (e.g., `handleGetBundle`, `handleHashStats` in Tier 3 routes, and reporting aggregations) were fetching 10,000+ tip records via `listTips({ limit: 10_000 })` without excluding large text blobs like `raw_body` and `files`. This causes massive object hydration overhead and severe memory inflation, even if only metadata or dates are needed.
+**Action:** Always explicitly use `exclude_body: true` (and `exclude_files: true` when appropriate) when fetching large batches of tips for aggregation or duplicate counting.
