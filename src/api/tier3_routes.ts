@@ -82,9 +82,8 @@ async function handleHashStats(_req: Request, res: Response): Promise<void> {
   cutoff.setDate(cutoff.getDate() - 30);
   const cutoffISO = cutoff.toISOString();
 
-  // ⚡ Bolt Optimization: exclude heavy body strings when just computing hash stats
-  const { tips } = await listTips({ limit: 10_000, exclude_body: true });
-  const recent = tips.filter((t) => t.received_at >= cutoffISO);
+  // ⚡ Bolt Optimization: push date filtering down to the database to prevent over-fetching
+  const { tips: recent } = await listTips({ limit: 10_000, exclude_body: true, since: cutoffISO });
 
   let ncmecMatches = 0;
   let projectVicMatches = 0;
