@@ -10,3 +10,10 @@
 **Vulnerability:** The `enqueueTip` function in `src/ingestion/queue.ts` used `Math.random()` to create job IDs, which lacks sufficient entropy.
 **Learning:** Relying on `Math.random()` for generating any IDs, even in a queue context, is a predictable approach and not considered a security best practice for uniqueness or entropy.
 **Prevention:** Replace with `crypto.randomUUID()`.
+
+## 2026-06-15 - Hardcoded VPN Portal Secret Fallback
+**Vulnerability:** The `/intake/portal` endpoint in `src/ingestion/routes.ts` relied on a fallback hardcoded secret (`"dev-secret"`) for validating HMAC signatures if `VPN_PORTAL_SECRET` was omitted from the environment. This allowed unauthorized users to bypass authentication in improperly configured deployments by guessing or knowing the fallback key.
+**Learning:** Security-critical configuration values (like HMAC secrets for endpoints) must never have hardcoded defaults that fall back securely. If an endpoint requires authentication and the secret is missing, it is safer to prevent the application from starting entirely. When fixing such issues, explicitly throwing an error on startup is preferred over silently un-mounting the route, which could lead to difficult-to-diagnose operational failures in existing deployments that were accidentally missing the flag.
+**Prevention:**
+1.  **Fail Fast:** Always check for required security configuration keys (e.g., `VPN_PORTAL_SECRET`, `JWT_SECRET`) during application startup or module initialization and throw a fatal error if they are missing.
+2.  **No Fallbacks:** Do not use `?? "dev-secret"` or similar constructs for cryptographic secrets in application code.
