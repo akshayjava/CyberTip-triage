@@ -190,7 +190,11 @@ async function handlePublicSubmission(req: Request, res: Response): Promise<void
 import type { Application } from "express";
 
 export function mountIngestionRoutes(app: Application): void {
-  const portalSecret = process.env["VPN_PORTAL_SECRET"] ?? "dev-secret";
+  const portalSecret = process.env["VPN_PORTAL_SECRET"];
+
+  if (!portalSecret) {
+    throw new Error("SECURITY FATAL: VPN_PORTAL_SECRET is not set.");
+  }
 
   // VPN portal — HMAC signed, internal network only
   app.post(
