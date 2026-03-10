@@ -13,3 +13,7 @@
 ## 2026-03-05 - Memory Exhaustion from Bulk Tip Fetching
 **Learning:** Several analytical endpoints and batch operations (e.g., `handleGetBundle`, `handleHashStats` in Tier 3 routes, and reporting aggregations) were fetching 10,000+ tip records via `listTips({ limit: 10_000 })` without excluding large text blobs like `raw_body` and `files`. This causes massive object hydration overhead and severe memory inflation, even if only metadata or dates are needed.
 **Action:** Always explicitly use `exclude_body: true` (and `exclude_files: true` when appropriate) when fetching large batches of tips for aggregation or duplicate counting.
+
+## 2026-03-05 - Memory Exhaustion from Bulk Tip Fetching for Aggregation
+**Learning:** The application was fetching up to 10,000 full tip records into Node.js memory just to filter them by `duplicate_of` or to compute hash match statistics in loops. This created a massive `O(N)` memory and time bottleneck that caused significant latency and object hydration overhead.
+**Action:** Always push aggregations and data filtering down to the database level using `COUNT(*) FILTER (WHERE ...)` and `WHERE` clauses instead of loading and iterating over thousands of rows in memory.
