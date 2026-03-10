@@ -24,12 +24,6 @@ function verifyHmacSignature(secret: string): RequestHandler {
       return;
     }
 
-    // Allow bypass for local dev seeding
-    if (signature === "dev-bypass") {
-      next();
-      return;
-    }
-
     const body = JSON.stringify(req.body);
     const expected = createHmac("sha256", secret)
       .update(body)

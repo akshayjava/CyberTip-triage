@@ -17,3 +17,10 @@
 **Prevention:**
 1.  **Fail Fast:** Always check for required security configuration keys (e.g., `VPN_PORTAL_SECRET`, `JWT_SECRET`) during application startup or module initialization and throw a fatal error if they are missing.
 2.  **No Fallbacks:** Do not use `?? "dev-secret"` or similar constructs for cryptographic secrets in application code.
+
+## 2026-07-20 - Leftover Developer Bypass in Authentication Middleware
+**Vulnerability:** The `verifyHmacSignature` middleware in `src/ingestion/routes.ts` contained a hardcoded condition `if (signature === "dev-bypass") { next(); return; }` that allowed an unauthenticated attacker to bypass the HMAC signature validation entirely.
+**Learning:** Development and debugging backdoors must never be committed to the main codebase or shipped to production. They undermine the entire security model of the endpoint. Security mechanisms must be tested using valid, securely generated test credentials or proper mocking in test suites, not through hardcoded application bypasses.
+**Prevention:**
+1.  **No Code Bypasses:** Do not include code that intentionally bypasses security checks (like "dev mode" flags or hardcoded "magic" values) in production middleware.
+2.  **Use Test Environments:** Ensure tests use validly signed test fixtures or mock the middleware at the test framework level.

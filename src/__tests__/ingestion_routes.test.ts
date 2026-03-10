@@ -96,3 +96,19 @@ describe("Agency API Key Validation", () => {
     expect(res.body.error).toBe("Missing agency credentials");
   });
 });
+
+describe("VPN Portal Signature Validation", () => {
+  beforeAll(() => {
+    process.env["VPN_PORTAL_SECRET"] = "test-secret";
+  });
+
+  it("should reject dev-bypass signature", async () => {
+    const res = await request(app)
+      .post("/intake/portal")
+      .set("x-signature", "dev-bypass")
+      .send({ content: "test tip content" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Invalid signature");
+  });
+});
