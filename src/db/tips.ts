@@ -520,7 +520,7 @@ export async function getTipStats(): Promise<TipStats> {
       }
       const tier = t.priority?.tier;
       if (tier && tier in by_tier) {
-        by_tier[tier]++;
+        by_tier[tier]!++;
       }
     }
 
@@ -643,7 +643,148 @@ export async function getBundleStatsData(): Promise<{
   return { unique_bundles, total_incidents, largest_bundle };
 }
 
+
+// ── Read: Duplicate tips for a bundle canonical ID ────────────────────────────
+
+export async function getDuplicatesForBundle(
+  canonicalId: string
+): Promise<Array<{ tip_id: string; received_at: string; source: string }>> {
+  if (!isPostgres()) {
+    const duplicates = Array.from(memStore.values()).filter(
+      (t) => t.status === "duplicate" && t.links?.duplicate_of === canonicalId
+    );
+    return duplicates.map((d) => ({
+      tip_id: d.tip_id,
+      received_at: d.received_at instanceof Date ? d.received_at.toISOString() : String(d.received_at),
+      source: d.source,
+    }));
+  }
+
+  const pool = getPool();
+  const result = await pool.query<{ tip_id: string, received_at: Date | string, source: string }>(
+    `SELECT tip_id, received_at, source
+     FROM cyber_tips
+     WHERE status = 'duplicate' AND links->>'duplicate_of' = $1
+     ORDER BY received_at DESC`,
+    [canonicalId]
+  );
+
+  return result.rows.map((r) => ({
+    tip_id: r.tip_id,
+    received_at: r.received_at instanceof Date ? r.received_at.toISOString() : String(r.received_at),
+    source: r.source,
+  }));
+}
+
+// ── Read: Hash match statistics over a period ─────────────────────────────────
+
+export async function getHashMatchStats(sinceISO: string): Promise<{
+  tips_analyzed: number;
+  files_checked: number;
+  ncmec_matches: number;
+  project_vic_matches: number;
+  iwf_matches: number;
+  interpol_icse_matches: number;
+  aig_csam_suspected: number;
+  any_db_match_tips: number;
+}> {
+  if (!isPostgres()) {
+    const sinceTime = new Date(sinceISO).getTime();
+    const recent = Array.from(memStore.values()).filter(t => new Date(t.received_at).getTime() >= sinceTime);
+
+    let ncmec_matches = 0;
+    let project_vic_matches = 0;
+    let iwf_matches = 0;
+    let interpol_icse_matches = 0;
+    let aig_csam_suspected = 0;
+    let files_checked = 0;
+    let any_db_match_tips = 0;
+
+    for (const tip of recent) {
+      let tipHasMatch = false;
+      for (const f of tip.files ?? []) {
+        files_checked++;
+        if (f.ncmec_hash_match)    ncmec_matches++;
+        if (f.project_vic_match)   project_vic_matches++;
+        if (f.iwf_match)           iwf_matches++;
+        if (f.interpol_icse_match) interpol_icse_matches++;
+        if (f.aig_csam_suspected)  aig_csam_suspected++;
+        if (f.ncmec_hash_match || f.project_vic_match || f.iwf_match || f.interpol_icse_match) {
+          tipHasMatch = true;
+        }
+      }
+      if (tipHasMatch) any_db_match_tips++;
+    }
+
+    return {
+      tips_analyzed: recent.length,
+      files_checked,
+      ncmec_matches: ncmec_matches,
+      project_vic_matches: project_vic_matches,
+      iwf_matches: iwf_matches,
+      interpol_icse_matches: interpol_icse_matches,
+      aig_csam_suspected: aig_csam_suspected,
+      any_db_match_tips: any_db_match_tips,
+    };
+  }
+
+  const pool = getPool();
+  // ⚡ Bolt Optimization: Use CTE to compute hash stats in a single database round-trip
+  const result = await pool.query<{
+    tips_analyzed: string;
+    files_checked: string;
+    ncmec_matches: string;
+    project_vic_matches: string;
+    iwf_matches: string;
+    interpol_icse_matches: string;
+    aig_csam_suspected: string;
+    any_db_match_tips: string;
+  }>(`
+    WITH recent_tips AS (
+      SELECT tip_id FROM cyber_tips WHERE received_at >= $1
+    ),
+    tip_stats AS (
+      SELECT COUNT(*) as tips_analyzed FROM recent_tips
+    ),
+    file_stats AS (
+      SELECT
+        COUNT(*) as files_checked,
+        COUNT(*) FILTER (WHERE ncmec_hash_match = true) as ncmec_matches,
+        COUNT(*) FILTER (WHERE project_vic_match = true) as project_vic_matches,
+        COUNT(*) FILTER (WHERE iwf_match = true) as iwf_matches,
+        COUNT(*) FILTER (WHERE interpol_icse_match = true) as interpol_icse_matches,
+        COUNT(*) FILTER (WHERE aig_csam_suspected = true) as aig_csam_suspected,
+        COUNT(DISTINCT tip_id) FILTER (WHERE ncmec_hash_match = true OR project_vic_match = true OR iwf_match = true OR interpol_icse_match = true) as any_db_match_tips
+      FROM tip_files
+      WHERE tip_id IN (SELECT tip_id FROM recent_tips)
+    )
+    SELECT
+      tip_stats.tips_analyzed,
+      file_stats.files_checked,
+      file_stats.ncmec_matches,
+      file_stats.project_vic_matches,
+      file_stats.iwf_matches,
+      file_stats.interpol_icse_matches,
+      file_stats.aig_csam_suspected,
+      file_stats.any_db_match_tips
+    FROM tip_stats CROSS JOIN file_stats
+  `, [sinceISO]);
+
+  const r = result.rows[0];
+  return {
+    tips_analyzed: parseInt(r?.tips_analyzed ?? "0", 10),
+    files_checked: parseInt(r?.files_checked ?? "0", 10),
+    ncmec_matches: parseInt(r?.ncmec_matches ?? "0", 10),
+    project_vic_matches: parseInt(r?.project_vic_matches ?? "0", 10),
+    iwf_matches: parseInt(r?.iwf_matches ?? "0", 10),
+    interpol_icse_matches: parseInt(r?.interpol_icse_matches ?? "0", 10),
+    aig_csam_suspected: parseInt(r?.aig_csam_suspected ?? "0", 10),
+    any_db_match_tips: parseInt(r?.any_db_match_tips ?? "0", 10),
+  };
+}
+
 // ── Internal assembly helpers ─────────────────────────────────────────────────
+
 
 interface TipRow {
   tip_id: string;
