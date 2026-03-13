@@ -278,6 +278,27 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
   return assembleTip(tipRow.rows[0]!, filesRow.rows, presRow.rows, auditRow.rows);
 }
 
+// ── Read: find tip by preservation request id ─────────────────────────────────
+
+export async function getTipByPreservationId(requestId: string): Promise<CyberTip | null> {
+  if (!isPostgres()) {
+    for (const tip of memStore.values()) {
+      if (tip.preservation_requests?.some((pr: any) => pr.request_id === requestId)) {
+        return tip;
+      }
+    }
+    return null;
+  }
+
+  const pool = getPool();
+  const row = await pool.query<{ tip_id: string }>(
+    `SELECT tip_id FROM preservation_requests WHERE request_id = $1 LIMIT 1`,
+    [requestId]
+  );
+  if (row.rows.length === 0) return null;
+  return getTipById(row.rows[0]!.tip_id);
+}
+
 // ── Read: paginated tip list with tier filtering ──────────────────────────────
 
 export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResult> {
