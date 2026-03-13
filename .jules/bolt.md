@@ -17,3 +17,7 @@
 ## 2026-03-05 - Memory Exhaustion from Bulk Tip Fetching for Aggregation
 **Learning:** The application was fetching up to 10,000 full tip records into Node.js memory just to filter them by `duplicate_of` or to compute hash match statistics in loops. This created a massive `O(N)` memory and time bottleneck that caused significant latency and object hydration overhead.
 **Action:** Always push aggregations and data filtering down to the database level using `COUNT(*) FILTER (WHERE ...)` and `WHERE` clauses instead of loading and iterating over thousands of rows in memory.
+
+## 2026-03-05 - Memory Exhaustion from Finding Tips by Nested Property
+**Learning:** `src/auth/tier2_routes.ts` was fetching 1000 full tip records via `listTips({ limit: 1000 })` just to perform an `O(N)` loop to find a single tip that matched a specific `request_id` inside the nested `preservation_requests` array. Fetching large records that include raw body texts into Node.js memory just for lookup purposes causes significant overhead and memory exhaustion.
+**Action:** Replace high-volume in-memory search loops with specific database queries (e.g., querying `preservation_requests` to get `tip_id` and then `getTipById(tip_id)`) to drastically reduce data transfer and object hydration costs.

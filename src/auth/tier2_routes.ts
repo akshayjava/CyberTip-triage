@@ -204,12 +204,8 @@ async function handleDownloadPreservationPDF(req: Request, res: Response): Promi
   const session   = req.session;
 
   // Find the tip containing this preservation request
-  // We do a broad search — in production this would be a direct DB lookup
-  const { listTips } = await import("../db/tips.js");
-  const { tips }     = await listTips({ limit: 1000 });
-  const tip          = tips.find((t) =>
-    t.preservation_requests?.some((pr: any) => pr.request_id === requestId)
-  );
+  const { getTipByPreservationId } = await import("../db/tips.js");
+  const tip          = await getTipByPreservationId(requestId);
 
   if (!tip) { res.status(404).json({ error: "Preservation request not found" }); return; }
 
