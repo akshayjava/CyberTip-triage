@@ -16,7 +16,7 @@
  *   admin:        full system; officer management
  */
 
-import { createHmac, timingSafeEqual, randomBytes, pbkdf2Sync } from "crypto";
+import { createHmac, timingSafeEqual, randomBytes, pbkdf2Sync, createHash } from "crypto";
 import { randomUUID } from "crypto";
 import {
   getOfficerByBadge,
@@ -109,9 +109,12 @@ export async function verifyToken(token: string): Promise<AuthSession | null> {
   // Timing-safe signature verification
   const expected = hmacSign(headerB64, payloadB64);
   try {
-    const expBuf = Buffer.from(expected, "utf8");
-    const sigBuf = Buffer.from(sig,      "utf8");
-    if (expBuf.length !== sigBuf.length || !timingSafeEqual(expBuf, sigBuf)) return null;
+    // Hash both signatures to ensure they are the same length
+    // and avoid timing attacks on string length or short-circuiting.
+    const expectedHash = createHash("sha256").update(expected).digest();
+    const actualHash = createHash("sha256").update(sig).digest();
+
+    if (!timingSafeEqual(expectedHash, actualHash)) return null;
   } catch {
     return null;
   }

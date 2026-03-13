@@ -8,7 +8,7 @@
  */
 
 import type { RequestHandler, Request, Response } from "express";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual, createHash } from "crypto";
 import { enqueueTip } from "./queue.js";
 import type { TipSource } from "../models/index.js";
 import { publicIntakeLimiter } from "../middleware/rate-limit.js";
@@ -29,13 +29,12 @@ function verifyHmacSignature(secret: string): RequestHandler {
       .update(body)
       .digest("hex");
 
-    const sigBuffer = Buffer.from(signature);
-    const expBuffer = Buffer.from(`sha256=${expected}`);
+    // Hash both signatures to ensure they are the same length
+    // and avoid timing attacks on string length or short-circuiting.
+    const expectedHash = createHash("sha256").update(`sha256=${expected}`).digest();
+    const actualHash = createHash("sha256").update(signature).digest();
 
-    if (
-      sigBuffer.length !== expBuffer.length ||
-      !timingSafeEqual(sigBuffer, expBuffer)
-    ) {
+    if (!timingSafeEqual(expectedHash, actualHash)) {
       res.status(401).json({ error: "Invalid signature" });
       return;
     }
