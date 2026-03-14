@@ -15,7 +15,8 @@ async function sendNightlyDigest() {
   console.log(`[DIGEST] Generating report since ${yesterday}...`);
 
   try {
-    const { tips } = await listTips({ since: yesterday, limit: 1000 });
+    // ⚡ Bolt Optimization: Exclude heavy body text and files to save memory during batch fetch
+    const { tips } = await listTips({ since: yesterday, limit: 1000, exclude_body: true, exclude_files: true });
 
     if (tips.length === 0) {
       console.log("[DIGEST] No tips in last 24h. Skipping email.");
