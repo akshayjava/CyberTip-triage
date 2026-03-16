@@ -7,48 +7,48 @@
     {
       "time_s": 0,
       "duration_s": 8,
-      "narration": "Every ICAC unit faces the same problem: thousands of NeCMEC tips, limited investigators, and zero room for compliance error. CyberTip Triage was built for exactly this.",
+      "narration": "Your task force receives hundreds of NeCMEC tips a month. Most are manually triaged, one at a time. CyberTip Triage changes that.",
       "action": {
         "type": "navigate",
         "target": "http://localhost:3000/dashboard"
       },
       "caption": "The tip volume problem",
-      "badge": "OVERVIEW"
+      "badge": "PROBLEM"
     },
     {
       "time_s": 8,
       "duration_s": 7,
-      "narration": "The dashboard gives you real-time visibility. Stats cards show total tips, pending actions, and compliance status at a glance.",
+      "narration": "The dashboard gives you an immediate operational picture. Stats cards show total tips, pending warrants, and cases requiring immediate action.",
       "action": {
         "type": "hover",
         "target": ".stats-card"
       },
-      "caption": "Real-time operational picture"
+      "caption": "Real-time operational overview"
     },
     {
       "time_s": 15,
       "duration_s": 7,
-      "narration": "Every incoming tip is scored by AI and assigned a priority tier — from Immediate down to Monitor. No manual sorting required.",
+      "narration": "Every incoming tip is scored by AI and assigned a priority tier, from Immediate down to Monitor, based on victim crisis indicators.",
       "action": {
         "type": "hover",
         "target": ".tier-badge"
       },
-      "badge": "AI PRIORITY"
+      "badge": "AI SCORING"
     },
     {
       "time_s": 22,
       "duration_s": 6,
-      "narration": "Filter to Immediate tier to surface tips with active victim crisis indicators first.",
+      "narration": "Filter to Immediate tier to surface the highest-risk cases first. No more guessing which tip to open next.",
       "action": {
         "type": "click",
         "target": "#tier-filter-IMMEDIATE"
       },
-      "caption": "Crisis-first prioritization"
+      "caption": "Priority filtering"
     },
     {
       "time_s": 28,
       "duration_s": 6,
-      "narration": "Select the top tip to open the detail pane. The system pulls in all NeCMEC data automatically.",
+      "narration": "Select the top tip to open its detail pane. The system pulls in the full NeCMEC report automatically.",
       "action": {
         "type": "click",
         "target": ".tip-row:first-child"
@@ -57,80 +57,78 @@
     {
       "time_s": 34,
       "duration_s": 7,
-      "narration": "Notice the cluster alert — this tip is linked to a viral distribution bundle. Duplicate tips collapse into one actionable lead.",
+      "narration": "Notice the cluster alert. The system detected three other tips linked to the same viral incident and bundled them, eliminating duplicate work.",
       "action": {
-        "type": "hover",
+        "type": "highlight",
         "target": ".cluster-alert"
       },
-      "caption": "Bundle deduplication",
-      "badge": "CLU DETECTION"
+      "badge": "DEDUPLICATION"
     },
     {
       "time_s": 41,
-      "duration_s": 5,
-      "narration": "Now let's look at the files tab, where Wilson compliance is enforced automatically.",
-      "action": {
-        "type": "click",
-        "target": "[id=\"tab-files\"]"
-      }
-    },
-    {
-      "time_s": 46,
-      "duration_s": 8,
-      "narration": "When the ESP did not view an attachment before forwarding, the system blocks investigator access. This protects Fourth Amendment compliance without slowing your workflow.",
-      "action": {
-        "type": "highlight",
-        "target": ".file-blocked"
-      },
-      "caption": "Wilson v. Azar compliance",
-      "badge": "WILSON BLOCK"
-    },
-    {
-      "time_s": 54,
       "duration_s": 7,
-      "narration": "To access blocked files, initiate the warrant workflow directly from here. One click marks the application as submitted and begins tracking.",
-      "action": {
-        "type": "click",
-        "target": ".warrant-btn"
-      },
-      "caption": "Integrated warrant workflow",
-      "badge": "WARRANT"
-    },
-    {
-      "time_s": 61,
-      "duration_s": 6,
-      "narration": "When the warrant is granted, blocked files automatically unlock. Full audit trail preserved for prosecution.",
-      "action": {
-        "type": "scroll",
-        "target": ".tip-detail-pane",
-        "scrollPx": 200
-      }
-    },
-    {
-      "time_s": 67,
-      "duration_s": 7,
-      "narration": "Each tip includes circuit-specific legal guidance tailored to your jurisdiction, so your team stays current on relevant case law.",
+      "narration": "Scroll down to the legal guidance section. Circuit-specific analysis is generated for each tip so your actions stay on solid legal ground.",
       "action": {
         "type": "highlight",
         "target": ".legal-note"
       },
-      "caption": "Circuit-specific legal notes",
-      "badge": "LEGAL"
+      "caption": "Circuit-specific legal guidance"
     },
     {
-      "time_s": 74,
+      "time_s": 48,
+      "duration_s": 5,
+      "narration": "Now let's look at the files tab. This is where Wilson compliance matters most.",
+      "action": {
+        "type": "click",
+        "target": "[id=\"tab-files\"]"
+      },
+      "badge": "WILSON COMPLIANCE"
+    },
+    {
+      "time_s": 53,
+      "duration_s": 8,
+      "narration": "When the ESP did not view an uploaded file, the system automatically blocks investigator access. This protects Fourth Amendment compliance at the organizational level.",
+      "action": {
+        "type": "highlight",
+        "target": ".file-blocked"
+      },
+      "caption": "Auto-blocked — ESP did not view"
+    },
+    {
+      "time_s": 61,
+      "duration_s": 7,
+      "narration": "To access a blocked file, initiate the warrant workflow directly from this screen. Click to mark the warrant as applied.",
+      "action": {
+        "type": "click",
+        "target": ".warrant-btn"
+      },
+      "badge": "WARRANT WORKFLOW"
+    },
+    {
+      "time_s": 68,
+      "duration_s": 7,
+      "narration": "The system tracks warrant status. Once granted, blocked files are automatically unblocked and the audit trail is fully documented.",
+      "action": {
+        "type": "scroll",
+        "target": ".tip-detail-pane",
+        "scrollPx": 200
+      },
+      "caption": "Automatic unblock on grant"
+    },
+    {
+      "time_s": 75,
       "duration_s": 6,
-      "narration": "Supervisors access the Tier Four panel for queue management, workload balancing, and compliance oversight across the entire unit.",
+      "narration": "Supervisors get their own view with queue health metrics, compliance audit logs, and workload distribution across the task force.",
       "action": {
         "type": "navigate",
         "target": "http://localhost:3000/tier4"
       },
-      "caption": "Supervisor oversight"
+      "caption": "Supervisor panel"
     },
     {
-      "time_s": 80,
-      "duration_s": 7,
-      "narration": "On-call investigators get a streamlined mobile interface for after-hours immediate-tier alerts. Nothing falls through the cracks.",
+      "time_s": 81,
+      "duration_s": 6,
+      "narration": "On-call investigators can triage from the field using the mobile interface, with the same priority scoring and compliance safeguards.",
       "action": {
         "type": "navigate",
         "target": "http://localhost:3000/mobile"
@@ -140,7 +138,7 @@
     {
       "time_s": 87,
       "duration_s": 5,
-      "narration": "CyberTip Triage. Fewer missed tips. Bulletproof compliance. Investigators focused where it matters.",
+      "narration": "CyberTip Triage. Faster prioritization. Built-in compliance. Every tip accounted for.",
       "action": {
         "type": "none",
         "target": ""
@@ -151,7 +149,7 @@
   "metadata": {
     "product": "CyberTip Triage",
     "version": "1.0.0-demo",
-    "generated_at": "2026-03-15T02:11:32.781Z",
+    "generated_at": "2026-03-16T02:37:36.503Z",
     "model_used": "claude-opus-4-6"
   }
 }
