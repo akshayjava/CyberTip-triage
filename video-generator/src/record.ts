@@ -75,6 +75,33 @@ export async function recordScreen(
 
   // Navigate to app and wait for initial load
   console.log(`[RECORD] Navigating to ${config.app_url}/dashboard`);
+
+  // Intercept the tip detail fetch to inject a blocked mock file into the NCMEC tip
+  await page.route("**/api/tips/*", async (route) => {
+    if (route.request().method() !== "GET") {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    const t = await response.json();
+    
+    if (t.source === "NCMEC_IDS" && (!t.files || t.files.length === 0)) {
+      t.files = [{
+        file_id: "mock_file_123",
+        filename: "image_001.jpg",
+        media_type: "image",
+        esp_viewed: false,
+        file_access_blocked: true,
+        warrant_status: null
+      }];
+      t.legal_status = {
+        any_files_accessible: false,
+        legal_note: "1 file(s) are BLOCKED per United States v. Wilson (9th Circuit, 2021).",
+        relevant_circuit: "9th Circuit"
+      };
+    }
+    await route.fulfill({ json: t });
+  });
+
   await page.goto(`${config.app_url}/dashboard`, {
     waitUntil: "networkidle",
     timeout: 30_000,
