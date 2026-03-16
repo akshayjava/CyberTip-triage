@@ -317,6 +317,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.is_bundled !== undefined) {
       tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
     }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
     if (opts.crisis_only) {
       tips = tips.filter(
         (t) =>
@@ -368,6 +371,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.status) {
     conditions.push(`status = $${paramIdx++}`);
     params.push(opts.status);
+  }
+  if (opts.unit) {
+    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
+    params.push(opts.unit);
   }
   if (opts.is_bundled !== undefined) {
     conditions.push(`is_bundled = $${paramIdx++}`);
