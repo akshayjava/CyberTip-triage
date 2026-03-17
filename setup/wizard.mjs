@@ -99,11 +99,10 @@ function warn(msg) { print(yellow(`  ⚠ ${msg}`)); }
 function err(msg) { print(red(`  ✗ ${msg}`)); }
 function info(msg) { print(cyan(`  → ${msg}`)); }
 
+import { randomBytes } from "crypto";
+
 function generateSecret(length = 32) {
-  return createHash("sha256")
-    .update(Math.random().toString() + Date.now().toString())
-    .digest("hex")
-    .slice(0, length);
+  return randomBytes(length).toString("hex").slice(0, length);
 }
 
 // ── Checks ────────────────────────────────────────────────────────────────────
