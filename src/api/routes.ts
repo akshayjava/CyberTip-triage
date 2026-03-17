@@ -57,13 +57,13 @@ async function handleGetQueue(req: Request, res: Response): Promise<void> {
   const limit = Math.min(parseInt((req.query["limit"] as string) ?? "200", 10), 500);
   const offset = parseInt((req.query["offset"] as string) ?? "0", 10);
 
-  const { tips, total } = await listTips({ tier, limit, offset });
-  const filtered = unit ? tips.filter((t) => t.priority?.routing_unit === unit) : tips;
+  // ⚡ Bolt Optimization: Push unit filtering to the database to prevent over-fetching and incorrect pagination limits
+  const { tips, total } = await listTips({ tier, unit, limit, offset });
 
   const grouped: Record<string, CyberTip[]> = {
     IMMEDIATE: [], URGENT: [], PAUSED: [], STANDARD: [], MONITOR: [], pending: [],
   };
-  for (const t of filtered) {
+  for (const t of tips) {
     const key = t.priority?.tier ?? "pending";
     (grouped[key] ?? grouped["pending"]!).push(t);
   }
