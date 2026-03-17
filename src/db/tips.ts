@@ -44,6 +44,8 @@ export interface ListTipsOptions {
   exclude_body?: boolean;
   /** Exclude file attachments array to prevent over-fetching when files are unneeded */
   exclude_files?: boolean;
+  /** Only return tips with one or more cluster flags */
+  has_cluster_flags?: boolean;
 }
 
 export interface ListTipsResult {
@@ -311,6 +313,12 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.tier) {
       tips = tips.filter((t) => t.priority?.tier === opts.tier);
     }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
     if (opts.status) {
       tips = tips.filter((t) => t.status === opts.status);
     }
@@ -364,6 +372,13 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.tier) {
     conditions.push(`priority->>'tier' = $${paramIdx++}`);
     params.push(opts.tier);
+  }
+  if (opts.unit) {
+    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
+    params.push(opts.unit);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
   if (opts.status) {
     conditions.push(`status = $${paramIdx++}`);

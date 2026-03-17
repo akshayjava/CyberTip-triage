@@ -57,13 +57,12 @@ async function handleGetQueue(req: Request, res: Response): Promise<void> {
   const limit = Math.min(parseInt((req.query["limit"] as string) ?? "200", 10), 500);
   const offset = parseInt((req.query["offset"] as string) ?? "0", 10);
 
-  const { tips, total } = await listTips({ tier, limit, offset });
-  const filtered = unit ? tips.filter((t) => t.priority?.routing_unit === unit) : tips;
+  const { tips, total } = await listTips({ tier, unit, limit, offset });
 
   const grouped: Record<string, CyberTip[]> = {
     IMMEDIATE: [], URGENT: [], PAUSED: [], STANDARD: [], MONITOR: [], pending: [],
   };
-  for (const t of filtered) {
+  for (const t of tips) {
     const key = t.priority?.tier ?? "pending";
     (grouped[key] ?? grouped["pending"]!).push(t);
   }
@@ -165,8 +164,8 @@ async function handleGetCrisisAlerts(_req: Request, res: Response): Promise<void
 
 // GET /api/clusters
 async function handleGetClusters(_req: Request, res: Response): Promise<void> {
-  const { tips } = await listTips({ status: "triaged", limit: 500 });
-  res.json(tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0));
+  const { tips } = await listTips({ status: "triaged", has_cluster_flags: true, limit: 500 });
+  res.json(tips);
 }
 
 // GET /api/stats
