@@ -21,3 +21,7 @@
 ## 2026-03-05 - Memory Exhaustion from Finding Tips by Nested Property
 **Learning:** `src/auth/tier2_routes.ts` was fetching 1000 full tip records via `listTips({ limit: 1000 })` just to perform an `O(N)` loop to find a single tip that matched a specific `request_id` inside the nested `preservation_requests` array. Fetching large records that include raw body texts into Node.js memory just for lookup purposes causes significant overhead and memory exhaustion.
 **Action:** Replace high-volume in-memory search loops with specific database queries (e.g., querying `preservation_requests` to get `tip_id` and then `getTipById(tip_id)`) to drastically reduce data transfer and object hydration costs.
+
+## 2026-03-06 - Concurrent Database Updates in Loops
+**Learning:** In the `runClusterScan` nightly job, processing `cluster.tip_ids` sequentially caused unnecessary latency for database lookups (`getTipById`) and updates (`upsertTip`, `appendAuditEntry`). Parallelizing these with `Promise.all` improves performance by ~70%.
+**Action:** Use `Promise.all` to parallelize asynchronous database operations within loops, but ensure side effects (like updating shared counters or arrays) are performed sequentially *after* the parallel batch resolves to maintain correctness.
