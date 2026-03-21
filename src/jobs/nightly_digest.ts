@@ -5,7 +5,7 @@
  * Includes stats for tips received in the last 24 hours.
  */
 
-import { listTips } from "../db/tips.js";
+import { getNightlyDigestStats } from "../db/tips.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
 
 async function sendNightlyDigest() {
@@ -15,56 +15,32 @@ async function sendNightlyDigest() {
   console.log(`[DIGEST] Generating report since ${yesterday}...`);
 
   try {
-    // ⚡ Bolt Optimization: Exclude heavy body text and files to save memory during batch fetch
-    const { tips } = await listTips({ since: yesterday, limit: 1000, exclude_body: true, exclude_files: true });
+    // ⚡ Bolt Optimization: Use a targeted DB aggregate query instead of fetching all full tips into memory
+    const stats = await getNightlyDigestStats(yesterday);
 
-    if (tips.length === 0) {
+    if (stats.total === 0) {
       console.log("[DIGEST] No tips in last 24h. Skipping email.");
       return;
     }
 
-    const counts = {
-      IMMEDIATE: 0,
-      URGENT: 0,
-      STANDARD: 0,
-      PAUSED: 0,
-      MONITOR: 0,
-      pending: 0,
-      crisis: 0,
-      escalated: 0
-    };
-
-    for (const tip of tips) {
-      const tier = (tip.priority?.tier ?? "pending") as keyof typeof counts;
-      if (counts[tier] !== undefined) counts[tier]++;
-
-      if (tip.priority?.victim_crisis_alert) counts.crisis++;
-
-      // Check for escalation (if we had an audit log query we could be precise,
-      // here we proxy by checking if it has cluster flags and is STANDARD/URGENT)
-      if ((tip.links?.cluster_flags as any[])?.length && tip.priority?.tier !== "MONITOR") {
-        counts.escalated++;
-      }
-    }
-
     const summary =
       `Nightly Digest (${new Date().toLocaleDateString()}): ` +
-      `${tips.length} total tips. ` +
-      `Crisis: ${counts.crisis}. ` +
-      `Breakdown: ${counts.IMMEDIATE} IMM, ${counts.URGENT} URG, ${counts.STANDARD} STD. ` +
-      `Escalations: ${counts.escalated}.`;
+      `${stats.total} total tips. ` +
+      `Crisis: ${stats.crisis}. ` +
+      `Breakdown: ${stats.by_tier.IMMEDIATE} IMM, ${stats.by_tier.URGENT} URG, ${stats.by_tier.STANDARD} STD. ` +
+      `Escalations: ${stats.escalated}.`;
 
     const body =
-      `Tips received in last 24h: ${tips.length}\n` +
+      `Tips received in last 24h: ${stats.total}\n` +
       `\n` +
-      `Crisis Alerts: ${counts.crisis}\n` +
-      `Immediate:     ${counts.IMMEDIATE}\n` +
-      `Urgent:        ${counts.URGENT}\n` +
-      `Paused:        ${counts.PAUSED}\n` +
-      `Standard:      ${counts.STANDARD}\n` +
-      `Monitor:       ${counts.MONITOR}\n` +
+      `Crisis Alerts: ${stats.crisis}\n` +
+      `Immediate:     ${stats.by_tier.IMMEDIATE}\n` +
+      `Urgent:        ${stats.by_tier.URGENT}\n` +
+      `Paused:        ${stats.by_tier.PAUSED}\n` +
+      `Standard:      ${stats.by_tier.STANDARD}\n` +
+      `Monitor:       ${stats.by_tier.MONITOR}\n` +
       `\n` +
-      `Cluster Escalations: ${counts.escalated}\n` +
+      `Cluster Escalations: ${stats.escalated}\n` +
       `\n` +
       `Log in to dashboard for details.`;
 
