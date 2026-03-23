@@ -278,6 +278,7 @@ function generateEnvFile(c: SetupConfig): string {
   const secret = generateSecret();
   const dbPassword = generateSecret(20);
   const redisPassword = generateSecret(20);
+  const jwtSecret = generateSecret(64);
 
   const dbUrl =
     c.dbUrl ||
@@ -299,6 +300,8 @@ CONTACT_EMAIL="${c.contactEmail || ""}"
 PORT=${c.port || 3000}
 NODE_ENV=production
 CORS_ORIGIN=http://localhost:${c.port || 3000}
+AUTH_ENABLED=true
+JWT_SECRET=${jwtSecret}
 
 # ── Anthropic AI ──────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY=${c.apiKey || "REPLACE_WITH_KEY"}
