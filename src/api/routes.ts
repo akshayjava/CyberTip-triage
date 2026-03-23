@@ -165,8 +165,8 @@ async function handleGetCrisisAlerts(_req: Request, res: Response): Promise<void
 
 // GET /api/clusters
 async function handleGetClusters(_req: Request, res: Response): Promise<void> {
-  const { tips } = await listTips({ status: "triaged", limit: 500 });
-  res.json(tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0));
+  const { tips } = await listTips({ status: "triaged", limit: 500, has_cluster_flags: true, exclude_body: true });
+  res.json(tips);
 }
 
 // GET /api/stats
