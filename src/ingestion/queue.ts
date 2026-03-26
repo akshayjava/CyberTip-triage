@@ -144,11 +144,25 @@ export async function enqueueTip(
 }
 
 export function getQueueStats(): QueueStats {
+  // ⚡ Bolt Optimization: Replace 4 O(N) filter loops with a single O(N) pass to count all statuses
+  let waiting = 0;
+  let active = 0;
+  let completed = 0;
+  let failed = 0;
+
+  for (let i = 0; i < inMemoryQueue.length; i++) {
+    const status = inMemoryQueue[i]!.status;
+    if (status === "waiting") waiting++;
+    else if (status === "active") active++;
+    else if (status === "completed") completed++;
+    else if (status === "failed") failed++;
+  }
+
   return {
-    waiting: inMemoryQueue.filter((j) => j.status === "waiting").length,
-    active: inMemoryQueue.filter((j) => j.status === "active").length,
-    completed: inMemoryQueue.filter((j) => j.status === "completed").length,
-    failed: inMemoryQueue.filter((j) => j.status === "failed").length,
+    waiting,
+    active,
+    completed,
+    failed,
     total: inMemoryQueue.length,
   };
 }
