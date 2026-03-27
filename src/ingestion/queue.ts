@@ -144,13 +144,24 @@ export async function enqueueTip(
 }
 
 export function getQueueStats(): QueueStats {
-  return {
-    waiting: inMemoryQueue.filter((j) => j.status === "waiting").length,
-    active: inMemoryQueue.filter((j) => j.status === "active").length,
-    completed: inMemoryQueue.filter((j) => j.status === "completed").length,
-    failed: inMemoryQueue.filter((j) => j.status === "failed").length,
+  // O(N) single pass to count job statuses instead of O(4N) multiple filters
+  const stats: QueueStats = {
+    waiting: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
     total: inMemoryQueue.length,
   };
+
+  for (let i = 0; i < inMemoryQueue.length; i++) {
+    const status = inMemoryQueue[i].status;
+    if (status === "waiting") stats.waiting++;
+    else if (status === "active") stats.active++;
+    else if (status === "completed") stats.completed++;
+    else if (status === "failed") stats.failed++;
+  }
+
+  return stats;
 }
 
 export function getJobStatus(jobId: string): QueuedJob | undefined {
