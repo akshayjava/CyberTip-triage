@@ -4,22 +4,25 @@
 
 import { enqueueTip } from "./queue.js";
 import type { IngestionConfig } from "./config.js";
+import { createLogger } from "../utils/logger.js";
+
+const logger = createLogger("EMAIL");
 
 export async function startEmailIngestion(
   config: IngestionConfig
 ): Promise<() => void> {
   if (!config.email.enabled) {
-    console.log("[EMAIL] Ingestion disabled");
+    logger.info("Ingestion disabled");
     return () => {};
   }
 
   const password = process.env["EMAIL_PASSWORD"];
   if (!config.email.user || !password) {
-    console.error("[EMAIL] Missing EMAIL_USER or EMAIL_PASSWORD");
+    logger.error("Missing EMAIL_USER or EMAIL_PASSWORD");
     return () => {};
   }
 
-  console.log(`[EMAIL] Starting IMAP listener on ${config.email.host}`);
+  logger.info(`Starting IMAP listener on ${config.email.host}`);
 
   // In production: use the 'imap' + 'mailparser' packages
   // Lazy import to avoid errors when email is disabled
@@ -44,7 +47,7 @@ export async function startEmailIngestion(
 
     imap.once("ready", () => {
       openInbox((err) => {
-        if (err) { console.error("[EMAIL] Could not open inbox:", err); return; }
+        if (err) { logger.error("Could not open inbox:", err); return; }
 
         // Process unseen messages
         imap.search(["UNSEEN"], (err, uids) => {
@@ -81,12 +84,12 @@ export async function startEmailIngestion(
       });
     });
 
-    imap.once("error", (...args: unknown[]) => console.error("[EMAIL] IMAP error:", args[0]));
+    imap.once("error", (...args: unknown[]) => logger.error("IMAP error:", args[0]));
     imap.connect();
 
     stopFn = () => imap.end();
   } catch (err) {
-    console.warn("[EMAIL] Could not start IMAP listener (missing imap package?):", err);
+    logger.warn("Could not start IMAP listener (missing imap package?):", err);
   }
 
   return stopFn;

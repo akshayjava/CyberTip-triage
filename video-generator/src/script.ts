@@ -97,6 +97,10 @@ NARRATION STYLE:
 - Each cue's narration should be completable in duration_s seconds at normal speaking pace
 - Total word count across all narrations: 180-220 words
 
+CONTENT RESTRICTIONS:
+- DO NOT mention any personal risks to investigators (e.g., "risk to your career", "losing your badge", "personal liability"). Focus on organizational risk, compliance, and efficiency instead.
+- Do not say anything that law enforcement might find objectionable or offensive.
+
 GRACEFUL ENDING:
 - The final cue must be a 5-second buffer to prevent the video from ending abruptly.
 - The action for this final cue should be "none" or "screenshot".
@@ -105,7 +109,7 @@ GRACEFUL ENDING:
 HARDENED SELECTORS:
 - Use #tier-filter-IMMEDIATE for the immediate priority filter.
 - Use .tip-row:first-child for selecting the top tip.
-- ALWAYS click [id="tab-files"] before interacting with .file-blocked or .warrant-btn.
+- CRITICAL: You MUST include an action to click target: "[id=\"tab-files\"]" immediately before interacting with .file-blocked or .warrant-btn. If you omit this step, the script will crash.
 - Use .file-blocked for Wilson-blocked files.
 - Use .warrant-btn specifically for the "Mark Applied" button.
 - Use .legal-note for the legal guidance section.
@@ -164,7 +168,7 @@ export async function generateScript(
   }
 
   // Ensure output dir exists
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const scriptPath = join(outputDir, `script_${ts}.json`);

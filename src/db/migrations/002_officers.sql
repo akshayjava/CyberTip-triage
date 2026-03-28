@@ -130,6 +130,6 @@ VALUES (
   'admin',
   'admin@agency.local',
   -- Default password: 'ChangeMe123!' — MUST be changed before production
-  'pbkdf2:100000:REPLACEWITHREALSALT:REPLACEWITHREALHASH'
+  'pbkdf2:600000:REPLACEWITHREALSALT:REPLACEWITHREALHASH'
 )
 ON CONFLICT (badge_number) DO NOTHING;

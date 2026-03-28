@@ -1,0 +1,108 @@
+# CyberTip Triage — Offline / Air-Gap Mode Override
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d
+#
+# This override:
+#   1. Adds Ollama as the local LLM server (replaces cloud API calls)
+#   2. Configures the app container to use Ollama via the offline network
+#   3. Disables external network access for the app container
+#   4. Mounts the local hash database directory
+#   5. Mounts the alert file queue directory
+#
+# ── Prerequisites ─────────────────────────────────────────────────────────────
+#
+#   BEFORE going air-gap (while you still have internet):
+#
+#   1. Pull Gemma 3 models:
+#      docker compose -f docker-compose.yml -f docker-compose.offline.yml \
+#        run --rm ollama ollama pull gemma3:27b
+#      docker compose -f docker-compose.yml -f docker-compose.offline.yml \
+#        run --rm ollama ollama pull gemma3:12b
+#      docker compose -f docker-compose.yml -f docker-compose.offline.yml \
+#        run --rm ollama ollama pull gemma3:4b
+#
+#   2. Place hash DB CSV exports in ./data/offline-hash-db/:
+#      ncmec_hashes.csv, projectvic_hashes.csv, iwf_hashes.csv,
+#      interpol_icse_hashes.csv, tor_exit_nodes.txt, known_vpns.txt
+#
+#   3. Verify Ollama is responding:
+#      curl http://localhost:11434/api/tags
+#
+# ── Air-gap checklist ─────────────────────────────────────────────────────────
+#
+#   □ Gemma models pulled and stored in ollama_models volume
+#   □ Hash DB CSV files populated in ./data/offline-hash-db/
+#   □ Internal SMTP server configured (ALERT_EMAIL_HOST in .env)
+#   □ PostgreSQL accessible on local network
+#   □ Redis accessible on local network
+#   □ .env has OFFLINE_MODE=true, LLM_PROVIDER=gemma
+#   □ IDS_ENABLED=false, NCMEC_API_ENABLED=false in .env
+#   □ Network interfaces disconnected from internet (or firewall rules applied)
+
+version: "3.9"
+
+services:
+  # ── App — offline overrides ────────────────────────────────────────────────
+  app:
+    environment:
+      OFFLINE_MODE: "true"
+      LLM_PROVIDER: "gemma"
+      LOCAL_LLM_BASE_URL: "http://ollama:11434/v1"
+      TOOL_MODE: "offline"
+      IDS_ENABLED: "false"
+      NCMEC_API_ENABLED: "false"
+    volumes:
+      # Hash DB files — populate before going air-gap
+      - ./data/offline-hash-db:/app/data/offline-hash-db:ro
+      # Alert file queue — writable, monitored by duty officers
+      - ./data/alert-queue:/app/data/alert-queue
+      # Interpol referral queue — writable
+      - ./data/interpol-queue:/app/data/interpol-queue
+    depends_on:
+      ollama:
+        condition: service_healthy
+    # Isolate from external networks — only talk to internal services
+    networks:
+      - internal
+    # Remove default network to prevent accidental internet access
+    # (Uncomment if your Docker setup supports network isolation)
+    # network_mode: "none"  # Too restrictive — use firewall rules instead
+
+  # ── Ollama — local Gemma inference server ─────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cybertip-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    expose:
+      - "11434"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # GPU support — uncomment if NVIDIA GPU with CUDA available
+    # This dramatically improves throughput for 27B models
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # PostgreSQL and Redis inherit from main compose without changes
+
+networks:
+  internal:
+    driver: bridge
+    internal: true   # No external access from this network
+
+volumes:
+  ollama_models:
+    driver: local

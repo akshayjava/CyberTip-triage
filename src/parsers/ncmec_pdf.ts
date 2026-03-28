@@ -181,7 +181,11 @@ function extractFileBlocks(sectionA: string): string[] {
 
   for (const pattern of splitPatterns) {
     const parts = sectionA.split(pattern);
-    if (parts.length > 1) return parts.filter((p) => p.trim().length > 20);
+    if (parts.length > 1) {
+      // First part is usually the section A header/preamble (ESP info, subject info)
+      // Discard it if we successfully split by file markers
+      return parts.slice(1).filter((p) => p.trim().length > 20);
+    }
   }
 
   // Single file — return entire section A as one block
@@ -210,9 +214,9 @@ export function parseNcmecPdfText(text: string): NcmecPdfParsed {
 
   const espName = extractField(
     a,
-    /(?:Reporting\s+)?(?:ESP|Electronic\s+Service\s+Provider)[:\s]+(.+)/i,
-    /Report(?:ed|ing)\s+Company[:\s]+(.+)/i,
-    /Submitted\s+[Bb]y[:\s]+(.+)/i
+    /(?:^|\n)(?:Reporting\s+)?(?:ESP|Electronic\s+Service\s+Provider)[:\s]+(.+)/i,
+    /(?:^|\n)Report(?:ed|ing)\s+Company[:\s]+(.+)/i,
+    /(?:^|\n)Submitted\s+[Bb]y[:\s]+(.+)/i
   );
 
   // File blocks
@@ -294,8 +298,8 @@ export function ncmecFilesToTipFiles(files: NcmecFileMeta[]): TipFile[] {
     publicly_available: f.publicly_available,
     // Conservative defaults — Legal Gate will compute final values
     warrant_required: !f.esp_viewed || f.esp_viewed_missing,
-    warrant_status: "pending_application" as const,
-    file_access_blocked: true, // Always start blocked; Legal Gate unlocks
+    warrant_status: "applied" as const,
+    file_access_blocked: !f.esp_viewed || f.esp_viewed_missing,
     // Hash match results — populated later by Hash & OSINT Agent
     ncmec_hash_match: false,
     project_vic_match: false,
@@ -303,4 +307,42 @@ export function ncmecFilesToTipFiles(files: NcmecFileMeta[]): TipFile[] {
     interpol_icse_match: false,
     aig_csam_suspected: false,
   }));
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export function validateNcmecPdf(parsed: NcmecPdfParsed): ValidationResult {
+  const errors: string[] = [];
+
+  if (!parsed.ncmec_tip_number) {
+    errors.push("Missing NCMEC Tip Number");
+  }
+
+  // Reporter check
+  if (!parsed.reporter.esp_name && parsed.reporter.type === "NCMEC") {
+    // If it's NCMEC type, we expect an ESP name usually, unless it's direct report?
+    // Actually just ensure we have *something*
+  }
+
+  // Files or Description check
+  // A valid tip must have either files or a description of the incident
+  if (parsed.section_a.files.length === 0 && parsed.section_a.incident_description.length < 5) {
+    errors.push("No files and empty incident description");
+  }
+
+  // Section A check
+  if (!parsed.section_a.esp_name && !parsed.section_a.subject_ip && !parsed.section_a.subject_email) {
+    // Very empty section A
+    errors.push("Section A missing critical fields (ESP, IP, or Email)");
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }

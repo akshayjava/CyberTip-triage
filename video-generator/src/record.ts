@@ -15,7 +15,7 @@
  * showing cue timing, which is useful for debugging sync issues.
  */
 
-import { existsSync, mkdirSync, copyFileSync } from "fs";
+import { mkdirSync, copyFileSync } from "fs";
 import { join } from "path";
 import type { DemoScript, ScriptCue, PlaywrightAction, VideoConfig } from "./types.js";
 
@@ -26,11 +26,11 @@ export async function recordScreen(
   config: VideoConfig,
   outputDir = "./output"
 ): Promise<string> {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
   // Playwright requires a non-existing dir for recording — use a temp path
   const recordingDir = join(outputDir, "_recording_tmp");
-  if (!existsSync(recordingDir)) mkdirSync(recordingDir, { recursive: true });
+  mkdirSync(recordingDir, { recursive: true });
 
   const { chromium } = await import("playwright");
 
@@ -75,6 +75,75 @@ export async function recordScreen(
 
   // Navigate to app and wait for initial load
   console.log(`[RECORD] Navigating to ${config.app_url}/dashboard`);
+
+  // Intercept the API to inject a blocked mock file into the NCMEC tip and hoist it to the top of the queue
+  await page.route("**/api/queue*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch();
+    const json = await response.json();
+    
+    let ncmecTip: any = null;
+    
+    // Find the NCMEC tip and remove it from its current tier
+    for (const tier of Object.keys(json)) {
+      if (!Array.isArray(json[tier])) continue;
+      const idx = json[tier].findIndex((t: any) => t.raw_body && t.raw_body.includes("TN-FICTIONAL"));
+      if (idx !== -1) {
+        ncmecTip = json[tier][idx];
+        json[tier].splice(idx, 1);
+      }
+    }
+    
+    // Inject the mock files and force it to the top of IMMEDIATE
+    if (ncmecTip) {
+      ncmecTip.files = [{
+        file_id: "mock_file_123",
+        filename: "image_001.jpg",
+        media_type: "image",
+        esp_viewed: false,
+        file_access_blocked: true,
+        warrant_status: null
+      }];
+      ncmecTip.legal_status = {
+        any_files_accessible: false,
+        legal_note: "1 file(s) are BLOCKED per United States v. Wilson (9th Circuit, 2021).",
+        relevant_circuit: "9th Circuit"
+      };
+      ncmecTip.priority = { ...ncmecTip.priority, tier: "IMMEDIATE", score: 99 };
+      if (!json["IMMEDIATE"]) json["IMMEDIATE"] = [];
+      json["IMMEDIATE"].unshift(ncmecTip);
+    }
+    
+    await route.fulfill({ json });
+  });
+
+  await page.route("**/api/tips/*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch();
+    const t = await response.json();
+    
+    if (t && t.raw_body && t.raw_body.includes("TN-FICTIONAL")) {
+      t.files = [{
+        file_id: "mock_file_123",
+        filename: "image_001.jpg",
+        media_type: "image",
+        esp_viewed: false,
+        file_access_blocked: true,
+        warrant_status: null
+      }];
+      t.legal_status = {
+        any_files_accessible: false,
+        legal_note: "1 file(s) are BLOCKED per United States v. Wilson (9th Circuit, 2021).",
+        relevant_circuit: "9th Circuit"
+      };
+      if (t.priority) {
+        t.priority.tier = "IMMEDIATE";
+        t.priority.score = 99;
+      }
+    }
+    await route.fulfill({ json: t });
+  });
+
   await page.goto(`${config.app_url}/dashboard`, {
     waitUntil: "networkidle",
     timeout: 30_000,

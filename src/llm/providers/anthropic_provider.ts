@@ -54,8 +54,8 @@ export class AnthropicProvider implements LLMProvider {
     ];
 
     // First call — optionally require tool use
-    let response = await withTimeout(
-      this.client.messages.create({
+    let response = await this.client.messages.create(
+      {
         model,
         max_tokens: maxTokens,
         system,
@@ -66,9 +66,8 @@ export class AnthropicProvider implements LLMProvider {
           : anthropicTools
           ? { tool_choice: { type: "auto" } }
           : {}),
-      }),
-      timeoutMs,
-      `Anthropic ${model} (${role}) timed out after ${timeoutMs}ms`
+      },
+      { signal: AbortSignal.timeout(timeoutMs) }
     );
 
     // Agentic loop
@@ -103,16 +102,15 @@ export class AnthropicProvider implements LLMProvider {
       messages.push({ role: "assistant", content: response.content });
       messages.push({ role: "user", content: toolResults });
 
-      response = await withTimeout(
-        this.client.messages.create({
+      response = await this.client.messages.create(
+        {
           model,
           max_tokens: maxTokens,
           system,
           messages,
           ...(anthropicTools ? { tools: anthropicTools, tool_choice: { type: "auto" } } : {}),
-        }),
-        timeoutMs,
-        `Anthropic ${model} tool-loop timed out at iteration ${iterations}`
+        },
+        { signal: AbortSignal.timeout(timeoutMs) }
       );
     }
 

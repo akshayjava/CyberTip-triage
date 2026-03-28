@@ -51,7 +51,7 @@ function makeBlockedFile(overrides: Partial<TipFile> = {}): TipFile {
     esp_viewed: false,
     esp_viewed_missing: false,
     warrant_required: true,
-    warrant_status: "pending_application",
+    warrant_status: "applied",
     file_access_blocked: true,
     ...overrides,
   });
@@ -317,7 +317,7 @@ export const cat14_missing_esp_flag: CyberTip[] = Array.from({ length: 15 }, (_,
       esp_viewed: false,
       esp_viewed_missing: true,
       warrant_required: true,
-      warrant_status: "pending_application",
+      warrant_status: "applied",
       file_access_blocked: true,
     })],
     legal_status: {

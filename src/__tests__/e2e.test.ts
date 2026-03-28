@@ -19,13 +19,13 @@ import { randomUUID } from "crypto";
 // ── Mock orchestrator — no real AI calls ─────────────────────────────────────
 
 const mockProcessTip = vi.fn();
-vi.mock("../../orchestrator.js", () => ({
+vi.mock("../orchestrator.js", () => ({
   processTip: mockProcessTip,
   onPipelineEvent: vi.fn(() => vi.fn()), // returns unsubscribe fn
 }));
 
 // Mock queue to call processTip directly for test speed
-vi.mock("../../ingestion/queue.js", () => ({
+vi.mock("../ingestion/queue.js", () => ({
   enqueueTip: async (input: unknown) => {
     const id = "test-job-" + randomUUID().slice(0, 8);
     setImmediate(() => mockProcessTip(input));
@@ -39,14 +39,15 @@ vi.mock("../../ingestion/queue.js", () => ({
 }));
 
 // Imports after mocks
-const { mountApiRoutes } = await import("../../api/routes.js");
-const { mountIngestionRoutes } = await import("../../ingestion/routes.js");
-const { mountSetupRoutes } = await import("../../api/setup_routes.js");
+const { mountApiRoutes } = await import("../api/routes.js");
+const { mountIngestionRoutes } = await import("../ingestion/routes.js");
+const { mountSetupRoutes } = await import("../api/setup_routes.js");
 
 // ── Test app factory ──────────────────────────────────────────────────────────
 
 function buildApp(): Application {
   const app = express();
+  app.disable("x-powered-by");
   app.use(express.json({ limit: "10mb" }));
   mountApiRoutes(app);
   mountIngestionRoutes(app);

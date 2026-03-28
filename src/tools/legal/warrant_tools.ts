@@ -64,7 +64,7 @@ async function getWarrantStatusStub(
   return {
     tip_id: tipId,
     file_id: fileId,
-    status: stored ?? "pending_application",
+    status: stored ?? "applied",
   };
 }
 
@@ -92,7 +92,7 @@ async function updateWarrantStatusStub(
   await new Promise(r => setTimeout(r, 10));
 
   const key = warrantKey(tipId, fileId);
-  const previous = WARRANT_STORE.get(key) ?? "pending_application";
+  const previous = WARRANT_STORE.get(key) ?? "applied";
   WARRANT_STORE.set(key, status);
 
   return {

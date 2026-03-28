@@ -12,15 +12,15 @@
 // Patterns that look like prompt injection attempts
 // We log these but never silently drop content — audit trail requires it
 const INJECTION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /ignore\s+(all\s+)?previous\s+instructions/gi, label: "ignore_instructions" },
-  { pattern: /you\s+are\s+now\s+in\s+(debug|admin|system)\s+mode/gi, label: "mode_override" },
-  { pattern: /set\s+file_access_blocked\s*=\s*(false|0)/gi, label: "wilson_bypass_attempt" },
-  { pattern: /grant\s+(all\s+)?warrants?/gi, label: "warrant_bypass_attempt" },
-  { pattern: /set\s+score\s*=?\s*0/gi, label: "score_zero_attempt" },
-  { pattern: /output\s+.*\{.*file_access_blocked.*false/gi, label: "json_injection" },
-  { pattern: /system\s+(prompt|override|instruction)/gi, label: "system_prompt_reference" },
-  { pattern: /\[SYSTEM\]/gi, label: "system_tag" },
-  { pattern: /<<SYS>>/gi, label: "llama_system_tag" },
+  { pattern: /ignore\s+(all\s+)?previous\s+instructions/i, label: "ignore_instructions" },
+  { pattern: /you\s+are\s+now\s+in\s+(debug|admin|system)\s+mode/i, label: "mode_override" },
+  { pattern: /set\s+file_access_blocked\s*=\s*(false|0)/i, label: "wilson_bypass_attempt" },
+  { pattern: /grant\s+(all\s+)?warrants?/i, label: "warrant_bypass_attempt" },
+  { pattern: /set\s+score\s*=?\s*0/i, label: "score_zero_attempt" },
+  { pattern: /output\s+.*\{.*file_access_blocked.*false/i, label: "json_injection" },
+  { pattern: /system\s+(prompt|override|instruction)/i, label: "system_prompt_reference" },
+  { pattern: /\[SYSTEM\]/i, label: "system_tag" },
+  { pattern: /<<SYS>>/i, label: "llama_system_tag" },
 ];
 
 export interface SanitizationResult {

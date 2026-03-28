@@ -33,7 +33,6 @@ export type TipStatus = z.infer<typeof TipStatusSchema>;
 
 export const WarrantStatusSchema = z.enum([
   "not_needed",
-  "pending_application",
   "applied",
   "granted",
   "denied",

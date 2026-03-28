@@ -157,9 +157,9 @@ function parseByContentType(input: RawTipInput): PreParsed {
         return {
           normalized_text: description,
           ncmec_urgent_flag: data["urgent"] === true || data["priority"] === 1,
-          is_bundled: typeof data["incident_count"] === "number" && (data["incident_count"] as number) > 1,
+          is_bundled: typeof data["incident_count"] === "number" && data["incident_count"] > 1,
           bundled_incident_count:
-            typeof data["incident_count"] === "number" ? (data["incident_count"] as number) : undefined,
+            typeof data["incident_count"] === "number" ? data["incident_count"] : undefined,
           reporter: {
             type: "ESP",
             esp_name:

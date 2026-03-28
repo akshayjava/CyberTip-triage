@@ -16,26 +16,53 @@ import { mountTier3Routes } from "./api/tier3_routes.js";
 import { mountSetupRoutes } from "./api/setup_routes.js";
 import { mountIngestionRoutes } from "./ingestion/routes.js";
 import { authMiddleware } from "./auth/middleware.js";
+import { apiLimiter } from "./middleware/rate-limit.js";
 import { startIdsPoller } from "./ingestion/ids_portal.js";
 import { startNcmecApiListener } from "./ingestion/ncmec_api.js";
 import { startEmailIngestion } from "./ingestion/email.js";
-import { startQueueWorkers } from "./ingestion/queue.js";
+import { startQueueWorkers, closeQueue } from "./ingestion/queue.js";
 import { loadConfig } from "./ingestion/config.js";
 import { warnIfAlertsUnconfigured } from "./tools/alerts/alert_tools.js";
 import { checkHashDBCredentials } from "./tools/hash/check_watchlists.js";
 import { startClusterScheduler, stopClusterScheduler } from "./jobs/cluster_scan.js";
+import { startDigestScheduler } from "./jobs/nightly_digest.js";
 import { hydrateFromDB } from "./compliance/circuit_guide.js";
 import { validateLLMConfig, getLLMConfigSummary } from "./llm/index.js";
+import { isOfflineMode, validateOfflineConfig, getOfflineSummary } from "./offline/offline_config.js";
+import { installNetworkGuard, getBlockedCalls } from "./utils/network_guard.js";
+import { reloadDatabases } from "./tools/hash/offline_hash_db.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env["PORT"] ?? "3000");
 
 async function main(): Promise<void> {
+  // ── Offline / Air-Gap mode — must be first ────────────────────────────────
+  if (isOfflineMode()) {
+    installNetworkGuard(); // blocks all external fetch() calls before any SDKs initialize
+
+    const offlineResult = validateOfflineConfig();
+    if (!offlineResult.ok) {
+      console.error("[OFFLINE] Fatal configuration errors — cannot start in offline mode:");
+      for (const e of offlineResult.errors) console.error(`  ERROR: ${e}`);
+      process.exit(1);
+    }
+  }
+
   const config = loadConfig();
   const app = express();
+  app.disable("x-powered-by");
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Security Headers Middleware (Defense in Depth)
+  app.use((_req, res, next) => {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    next();
+  });
 
   // CORS for dashboard dev server
   app.use((req, res, next) => {
@@ -47,6 +74,7 @@ async function main(): Promise<void> {
   });
 
   // Auth middleware (pass-through unless AUTH_ENABLED=true)
+  app.use("/api", apiLimiter);
   app.use("/api", authMiddleware);
 
   // Mount routes
@@ -67,7 +95,15 @@ async function main(): Promise<void> {
 
   // Health check
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", ts: new Date().toISOString(), llm: getLLMConfigSummary() });
+    res.json({
+      status: "ok",
+      ts: new Date().toISOString(),
+      llm: getLLMConfigSummary(),
+      ...(isOfflineMode() ? {
+        offline: getOfflineSummary(),
+        blocked_calls: getBlockedCalls().length,
+      } : {}),
+    });
   });
 
   // Start server
@@ -102,14 +138,23 @@ async function main(): Promise<void> {
   await startQueueWorkers();
   warnIfAlertsUnconfigured();
   startClusterScheduler(); // Tier 4.2: nightly pattern clustering
+  startDigestScheduler();  // P2: nightly digest email
 
   // Graceful shutdown
   process.on("SIGTERM", () => {
     console.log("\n[SERVER] SIGTERM received — shutting down");
     cleanups.forEach((fn) => fn());
     stopClusterScheduler();
-    process.exit(0);
+    void closeQueue().finally(() => process.exit(0));
   });
+
+  // Reload offline hash databases on SIGHUP (e.g. after updating CSV files)
+  if (isOfflineMode()) {
+    process.on("SIGHUP", () => {
+      console.log("[OFFLINE] SIGHUP received — reloading hash databases");
+      reloadDatabases();
+    });
+  }
 }
 
 main().catch((err) => {

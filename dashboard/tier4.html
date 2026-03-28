@@ -54,8 +54,10 @@ const ago = (iso) => {
 function ClusterScanPanel() {
   const [bundleStats, setBundleStats] = useState(null);
   const [scanResult,  setScanResult]  = useState(null);
+  const [clusterList, setClusterList] = useState([]);
   const [scanning,    setScanning]    = useState(false);
   const [error,       setError]       = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const loadBundleStats = async () => {
     try {
@@ -66,7 +68,44 @@ function ClusterScanPanel() {
     }
   };
 
-  useEffect(() => { loadBundleStats(); }, []);
+  const loadClusterList = async () => {
+    try {
+      const tips = await fetch(`${API}/clusters`).then(r => r.json());
+      const groups = {};
+      for (const tip of tips) {
+        for (const flag of tip.links?.cluster_flags ?? []) {
+          // cluster_id may be a UUID or fall back to cluster_type for older entries
+          const cid = flag.cluster_id ?? flag.cluster_type;
+          if (!groups[cid]) {
+            groups[cid] = {
+              id: cid,
+              type: flag.cluster_type,
+              desc: flag.description,
+              count: flag.tip_count,
+              tips: [],
+              window: flag.time_window_days
+            };
+          }
+          // Avoid duplicate tip entries within the same cluster group
+          if (!groups[cid].tips.find(t => t.tip_id === tip.tip_id)) {
+            groups[cid].tips.push(tip);
+          }
+        }
+      }
+      setClusterList(Object.values(groups).sort((a,b) => b.tips.length - a.tips.length));
+      setLastRefresh(new Date());
+    } catch (e) {
+      console.error("Failed to load clusters:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadBundleStats();
+    loadClusterList();
+    // Auto-refresh cluster list every 60 seconds
+    const interval = setInterval(loadClusterList, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const runScan = async () => {
     setScanning(true);
@@ -79,6 +118,7 @@ function ClusterScanPanel() {
       setError('Scan failed: ' + e.message);
     } finally {
       setScanning(false);
+      loadClusterList(); // Refresh list after scan
     }
   };
 
@@ -163,6 +203,72 @@ function ClusterScanPanel() {
       {error && (
         <div className="text-xs text-red-400 border border-red-900 rounded p-3">{error}</div>
       )}
+
+      {/* Active Clusters Table */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-bold text-gray-300">
+            Active Clusters ({clusterList.length})
+          </div>
+          {lastRefresh && (
+            <div className="text-xs text-gray-600">
+              Refreshed {lastRefresh.toLocaleTimeString()} · auto-refreshes every 60s
+            </div>
+          )}
+        </div>
+        {clusterList.length === 0 ? (
+          <div className="text-xs text-gray-500 py-4 text-center">No active clusters</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                  <th className="py-2 text-left pr-3">Cluster ID</th>
+                  <th className="py-2 text-left pr-3">Pattern Type</th>
+                  <th className="py-2 text-left pr-3">Pattern / Description</th>
+                  <th className="py-2 text-center pr-3">Tip Count</th>
+                  <th className="py-2 text-left">Member Tips</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clusterList.map(c => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid #1e293b' }} className="hover:bg-gray-800">
+                    <td className="py-2 pr-3 font-mono text-gray-500 text-xs align-top" style={{ whiteSpace: 'nowrap' }}>
+                      {c.id && c.id.length > 8 ? c.id.slice(0, 8) : (c.id ?? '—')}
+                    </td>
+                    <td className="py-2 pr-3 align-top" style={{ whiteSpace: 'nowrap' }}>
+                      <span className="text-orange-400 font-bold uppercase tracking-wide">
+                        {c.type?.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-gray-300 align-top" style={{ maxWidth: 260, wordBreak: 'break-word' }}>
+                      {c.desc}
+                    </td>
+                    <td className="py-2 pr-3 text-center align-top">
+                      <span className="font-bold text-blue-300">{c.tips.length}</span>
+                    </td>
+                    <td className="py-2 align-top">
+                      <div className="flex flex-wrap gap-1">
+                        {c.tips.map(t => (
+                          <a
+                            key={t.tip_id}
+                            href={`/?tip=${t.tip_id}`}
+                            title={`Open tip ${t.tip_id} in main dashboard`}
+                            style={{ textDecoration: 'none' }}
+                            className="px-2 py-0.5 bg-gray-800 border border-gray-700 rounded text-xs text-blue-400 hover:text-white hover:border-blue-500 font-mono"
+                          >
+                            {t.ncmec_tip_number ?? t.tip_id.slice(0, 8).toUpperCase()}
+                          </a>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Cluster pattern legend */}
       <div className="card p-4">
@@ -394,6 +500,11 @@ function CircuitLegalPanel() {
 function MLATOverviewPanel() {
   const [internationalTips, setInternationalTips] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [mlatRequests, setMlatRequests] = useState([]);
+  const [mlatTotal, setMlatTotal] = useState(0);
+  const [mlatLoading, setMlatLoading] = useState(true);
+  const [mlatOffset, setMlatOffset] = useState(0);
+  const MLAT_PAGE_SIZE = 25;
 
   const loadInternationalTips = async () => {
     try {
@@ -408,7 +519,25 @@ function MLATOverviewPanel() {
     setLoading(false);
   };
 
-  useEffect(() => { loadInternationalTips(); }, []);
+  const loadMlatRequests = async (offset = 0) => {
+    setMlatLoading(true);
+    try {
+      const resp = await fetch(`${API}/mlat/requests?limit=${MLAT_PAGE_SIZE}&offset=${offset}`);
+      const total = parseInt(resp.headers.get('X-Total-Count') ?? '0', 10);
+      const data  = await resp.json();
+      setMlatRequests(data);
+      setMlatTotal(total);
+      setMlatOffset(offset);
+    } catch {}
+    setMlatLoading(false);
+  };
+
+  useEffect(() => {
+    loadInternationalTips();
+    loadMlatRequests(0);
+    const interval = setInterval(() => loadMlatRequests(mlatOffset), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const TREATY_STATUS = {
     CA: { name: 'Canada',       mechanism: 'CLOUD Act',   timeline: '2–4 wks',  color: 'text-green-400' },
@@ -513,6 +642,92 @@ function MLATOverviewPanel() {
         {internationalTips.length > 20 && (
           <div className="text-xs text-gray-600 mt-2">Showing 20 of {internationalTips.length} — open full queue to see all.</div>
         )}
+      </div>
+
+      {/* Outstanding MLAT Requests */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-bold text-gray-300">
+            Outstanding MLAT Requests ({mlatLoading ? '…' : mlatTotal})
+          </div>
+          <button className="btn-primary" onClick={() => loadMlatRequests(mlatOffset)} disabled={mlatLoading}>
+            {mlatLoading ? <span className="anim-pulse">Loading…</span> : '↻ Refresh'}
+          </button>
+        </div>
+
+        {!mlatLoading && mlatRequests.length === 0 && (
+          <div className="text-xs text-gray-600">No outstanding MLAT requests.</div>
+        )}
+
+        {mlatRequests.length > 0 && (
+          <div className="overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                  <th className="py-2 text-left pr-3">Tracking ID</th>
+                  <th className="py-2 text-left pr-3">Country</th>
+                  <th className="py-2 text-left pr-3">Tip ID</th>
+                  <th className="py-2 text-left pr-3">Type</th>
+                  <th className="py-2 text-left pr-3">Generated At</th>
+                  <th className="py-2 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mlatRequests.map((r, i) => (
+                  <tr key={r.tracking_id ?? i} style={{ borderBottom: '1px solid #1e293b' }}>
+                    <td className="py-2 pr-3 font-mono text-blue-300 text-xs">{r.tracking_id}</td>
+                    <td className="py-2 pr-3 font-bold text-white">
+                      {r.treaty_profile?.country_name ?? r.subject_country}
+                      <span className="text-gray-500 font-normal ml-1">({r.subject_country})</span>
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-gray-400 text-xs">
+                      <a href={`/dashboard?id=${r.tip_id}`} style={{ color: '#60a5fa', textDecoration: 'none' }}>
+                        {r.tip_id?.slice(0,8).toUpperCase()}
+                      </a>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        r.recommended_mechanism === 'cloud_act'            ? 'badge-green'  :
+                        r.recommended_mechanism === 'budapest_preservation' ? 'badge-blue'   :
+                        r.recommended_mechanism === 'letters_rogatory'     ? 'badge-red'    :
+                        'badge-yellow'
+                      }`}>
+                        {r.recommended_mechanism?.replace(/_/g, ' ') ?? 'mlat'}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-gray-400 text-xs">{ago(r.generated_at)}</td>
+                    <td className="py-2">
+                      <span className="badge-gray text-xs px-2 py-0.5 rounded font-bold">generated</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {mlatTotal > MLAT_PAGE_SIZE && (
+          <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
+            <button
+              className="btn-primary"
+              disabled={mlatOffset === 0 || mlatLoading}
+              onClick={() => loadMlatRequests(Math.max(0, mlatOffset - MLAT_PAGE_SIZE))}
+            >← Prev</button>
+            <span>
+              {mlatOffset + 1}–{Math.min(mlatOffset + MLAT_PAGE_SIZE, mlatTotal)} of {mlatTotal}
+            </span>
+            <button
+              className="btn-primary"
+              disabled={mlatOffset + MLAT_PAGE_SIZE >= mlatTotal || mlatLoading}
+              onClick={() => loadMlatRequests(mlatOffset + MLAT_PAGE_SIZE)}
+            >Next →</button>
+          </div>
+        )}
+
+        <div className="text-xs text-gray-600 mt-3">
+          Auto-refreshes every 60 seconds. Requests are generated when an investigator opens the MLAT tab on a tip.
+        </div>
       </div>
     </div>
   );

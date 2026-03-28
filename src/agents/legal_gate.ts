@@ -104,11 +104,20 @@ const BASE_DELAY_MS = 2000;
 export async function runLegalGateAgent(tip: CyberTip): Promise<LegalGateOutput> {
   const start = Date.now();
 
+  // Step 4 (Moved to start): Determine jurisdiction for circuit analysis — Tier 4.1 full circuit guide
+  const jurisdictionState = extractJurisdictionState(tip);
+  const circuitInfo = getCircuitInfo(jurisdictionState ?? "unknown");
+
+  // Tier 4.1: per-file warrant decision with circuit-specific citations
+  const detectedCircuit = jurisdictionState
+    ? ((() => { try { return getCircuitForState(jurisdictionState); } catch { return null; } })())
+    : null;
+
   // Step 1: Pre-compute warrant requirements using deterministic Wilson logic.
   // The LLM confirms and enriches; it doesn't replace the deterministic computation.
   const filesWithWarrantFlags = tip.files.map((file: TipFile) => ({
     ...file,
-    warrant_required: computeWarrantRequired(file),
+    warrant_required: computeWarrantRequired(file, detectedCircuit),
   }));
 
   // Step 2: Check existing warrant statuses from the database
@@ -117,7 +126,7 @@ export async function runLegalGateAgent(tip: CyberTip): Promise<LegalGateOutput>
   // Step 3: Apply fetched statuses and compute file_access_blocked
   const filesWithBlockStatus: TipFile[] = filesWithWarrantFlags.map((file: TipFile & { warrant_required: boolean }) => {
     const fetchedStatus = warrantStatuses.get(file.file_id);
-    const warrant_status: WarrantStatus = fetchedStatus ?? (file.warrant_required ? "pending_application" : "not_needed");
+    const warrant_status: WarrantStatus = fetchedStatus ?? (file.warrant_required ? "applied" : "not_needed");
 
     return {
       ...file,
@@ -127,18 +136,9 @@ export async function runLegalGateAgent(tip: CyberTip): Promise<LegalGateOutput>
         esp_viewed_missing: file.esp_viewed_missing,
         publicly_available: file.publicly_available,
         warrant_status,
-      }),
+      }, detectedCircuit),
     };
   });
-
-  // Step 4: Determine jurisdiction for circuit analysis — Tier 4.1 full circuit guide
-  const jurisdictionState = extractJurisdictionState(tip);
-  const circuitInfo = getCircuitInfo(jurisdictionState ?? "unknown");
-
-  // Tier 4.1: per-file warrant decision with circuit-specific citations
-  const detectedCircuit = jurisdictionState
-    ? ((() => { try { return getCircuitForState(jurisdictionState); } catch { return null; } })())
-    : null;
   const circuitRule = detectedCircuit ? getCircuitRule(detectedCircuit) : null;
   const circuitGuidanceNote = circuitRule
     ? `[Circuit ${detectedCircuit}${circuitRule.binding_precedent ? ` — BINDING: ${circuitRule.binding_precedent.split(",")[0]}` : ` — No binding precedent, Wilson applied conservatively`}] ${circuitRule.notes.slice(0, 120)}`
@@ -375,7 +375,7 @@ export function buildBlockedOutput(tip: CyberTip, reason: string): LegalGateOutp
     ...f,
     warrant_required: true,
     file_access_blocked: true,
-    warrant_status: "pending_application" as WarrantStatus,
+    warrant_status: "applied" as WarrantStatus,
   }));
 
   return {

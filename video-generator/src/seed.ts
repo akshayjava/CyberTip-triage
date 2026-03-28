@@ -101,6 +101,14 @@ const SYNTHETIC_TIPS = [
   },
   {
     description:
+      "Third report: another user on Discord reporting the same image. " +
+      "Hash: sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890. " +
+      "Server name GamingHub2025.",
+    source: "public_web_form",
+    urgent: false,
+  },
+  {
+    description:
       "NCMEC Report #TN-FICTIONAL-2025-00123. " +
       "ESP: StreamCloud Inc. " +
       "Uploaded file flagged by PhotoDNA hash match against NCMEC database. " +
@@ -110,7 +118,7 @@ const SYNTHETIC_TIPS = [
       "Account verified phone: +1-555-0100 (fictional). " +
       "ESP requests law enforcement action. Section A flag: ESP DID NOT VIEW FILE.",
     source: "NCMEC_IDS",
-    urgent: false,
+    urgent: true,
   },
   // IMMEDIATE 1: Imminent Danger
   {
@@ -119,7 +127,7 @@ const SYNTHETIC_TIPS = [
       "Subject username: 'FriendlyNeighbor_42'. Platform: KidChat. " +
       "Subject has sent photos of a local park. Victim is scared. Request immediate intervention.",
     source: "public_web_form",
-    urgent: true,
+    urgent: false,
   },
   // IMMEDIATE 2: Active Production
   {
@@ -128,7 +136,7 @@ const SYNTHETIC_TIPS = [
       "Content is live CSAM production involving multiple infants. " +
       "Streaming alias: 'LiveShow_77'. Request emergency response.",
     source: "inter_agency",
-    urgent: true,
+    urgent: false,
   },
   // STANDARD 1: Historical
   {
@@ -180,11 +188,12 @@ export async function seedDemoData(
         "Content-Type": "application/json",
       };
 
-      // Portal requires HMAC — in dev mode the secret is "dev-secret"
-      // We skip HMAC for public endpoint; portal endpoint uses dev bypass
       if (tip.source === "NCMEC_IDS") {
-        // In dev mode auth is disabled — just add a dummy signature
-        headers["x-signature"] = "dev-bypass";
+        const secret = process.env["VPN_PORTAL_SECRET"] || "e5a2d233f7460f56411d644a60d9046c";
+        const signature = createHmac("sha256", secret)
+          .update(JSON.stringify(body))
+          .digest("hex");
+        headers["x-signature"] = "sha256=" + signature;
       }
 
       const response = await fetch(endpoint, {
@@ -213,8 +222,15 @@ export async function seedDemoData(
 
   // Wait for pipeline to process before recording begins
   if (seeded > 0) {
-    console.log("[SEED] Waiting 15s for pipeline to process tips...");
-    await sleep(15_000);
+    console.log("[SEED] Triggering manual cluster scan...");
+    try {
+      await fetch(`${appUrl}/api/jobs/cluster-scan`, { method: "POST" });
+    } catch (e) {
+      console.warn("[SEED] Failed to trigger cluster scan:", e);
+    }
+
+    console.log("[SEED] Waiting 30s for pipeline and clustering to process tips...");
+    await sleep(30_000);
   }
 
   return { seeded, failed };
