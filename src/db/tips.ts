@@ -337,6 +337,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.is_bundled !== undefined) {
       tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
     }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
     if (opts.crisis_only) {
       tips = tips.filter(
         (t) =>
