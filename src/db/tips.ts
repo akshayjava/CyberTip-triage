@@ -22,6 +22,13 @@ import type { CyberTip, TipFile } from "../models/index.js";
 
 const memStore = new Map<string, CyberTip>();
 
+/**
+ * Secondary index: preservation request_id → tip_id.
+ * Maintained in upsertTip so getTipByPreservationId avoids an O(n) scan
+ * over memStore in dev/test mode.
+ */
+const memPreservationIndex = new Map<string, string>();
+
 function isPostgres(): boolean {
   return process.env["DB_MODE"] === "postgres";
 }
@@ -44,6 +51,8 @@ export interface ListTipsOptions {
   exclude_body?: boolean;
   /** Exclude file attachments array to prevent over-fetching when files are unneeded */
   exclude_files?: boolean;
+  /** Only return tips that have cluster_flags > 0 */
+  has_cluster_flags?: boolean;
 }
 
 export interface ListTipsResult {
@@ -61,6 +70,10 @@ export interface ListTipsResult {
 export async function upsertTip(tip: CyberTip): Promise<void> {
   if (!isPostgres()) {
     memStore.set(tip.tip_id, tip);
+    // Keep preservation index up to date for O(1) lookups by request_id
+    for (const pr of tip.preservation_requests) {
+      memPreservationIndex.set(pr.request_id, tip.tip_id);
+    }
     return;
   }
 
@@ -282,12 +295,10 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
 
 export async function getTipByPreservationId(requestId: string): Promise<CyberTip | null> {
   if (!isPostgres()) {
-    for (const tip of memStore.values()) {
-      if (tip.preservation_requests?.some((pr: any) => pr.request_id === requestId)) {
-        return tip;
-      }
-    }
-    return null;
+    // O(1) lookup via secondary index maintained by upsertTip
+    const tipId = memPreservationIndex.get(requestId);
+    if (!tipId) return null;
+    return memStore.get(tipId) ?? null;
   }
 
   const pool = getPool();
@@ -311,8 +322,17 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.tier) {
       tips = tips.filter((t) => t.priority?.tier === opts.tier);
     }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
     if (opts.status) {
       tips = tips.filter((t) => t.status === opts.status);
+    }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
     }
     if (opts.is_bundled !== undefined) {
       tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
@@ -353,6 +373,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       tips = tips.map((t) => ({ ...t, files: [] }));
     }
 
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -367,6 +391,13 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.tier) {
     conditions.push(`priority->>'tier' = $${paramIdx++}`);
     params.push(opts.tier);
+  }
+  if (opts.unit) {
+    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
+    params.push(opts.unit);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
   if (opts.status) {
     conditions.push(`status = $${paramIdx++}`);
@@ -388,6 +419,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.since) {
     conditions.push(`received_at >= $${paramIdx++}`);
     params.push(opts.since);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -604,6 +638,86 @@ export async function getTipStats(): Promise<TipStats> {
     by_tier,
     crisis_alerts,
     blocked,
+  };
+}
+
+export interface NightlyDigestStats {
+  total: number;
+  crisis: number;
+  escalated: number;
+  by_tier: {
+    IMMEDIATE: number;
+    URGENT: number;
+    STANDARD: number;
+    PAUSED: number;
+    MONITOR: number;
+    pending: number;
+  };
+}
+
+export async function getNightlyDigestStats(sinceISO: string): Promise<NightlyDigestStats> {
+  if (!isPostgres()) {
+    const sinceTime = new Date(sinceISO).getTime();
+    const tips = Array.from(memStore.values()).filter(t => new Date(t.received_at).getTime() >= sinceTime);
+
+    const stats: NightlyDigestStats = {
+      total: tips.length,
+      crisis: 0,
+      escalated: 0,
+      by_tier: { IMMEDIATE: 0, URGENT: 0, STANDARD: 0, PAUSED: 0, MONITOR: 0, pending: 0 }
+    };
+
+    for (const tip of tips) {
+      const tier = (tip.priority?.tier ?? "pending") as keyof NightlyDigestStats["by_tier"];
+      if (stats.by_tier[tier] !== undefined) stats.by_tier[tier]++;
+      if (tip.priority?.victim_crisis_alert) stats.crisis++;
+      if ((tip.links?.cluster_flags as any[])?.length && tip.priority?.tier !== "MONITOR") {
+        stats.escalated++;
+      }
+    }
+    return stats;
+  }
+
+  const pool = getPool();
+  const result = await pool.query<{
+    total: string | null;
+    crisis: string | null;
+    escalated: string | null;
+    immediate: string | null;
+    urgent: string | null;
+    standard: string | null;
+    paused: string | null;
+    monitor: string | null;
+    pending: string | null;
+  }>(
+    `SELECT
+       COUNT(*) as total,
+       COUNT(*) FILTER (WHERE priority->>'victim_crisis_alert' = 'true') as crisis,
+       COUNT(*) FILTER (WHERE jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0 AND priority->>'tier' != 'MONITOR') as escalated,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'IMMEDIATE') as immediate,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'URGENT') as urgent,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'STANDARD') as standard,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'PAUSED') as paused,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'MONITOR') as monitor,
+       COUNT(*) FILTER (WHERE priority->>'tier' IS NULL) as pending
+     FROM cyber_tips
+     WHERE received_at >= $1`,
+    [sinceISO]
+  );
+
+  const row = result.rows[0] ?? {} as Record<string, string>;
+  return {
+    total: parseInt(row.total ?? "0", 10),
+    crisis: parseInt(row.crisis ?? "0", 10),
+    escalated: parseInt(row.escalated ?? "0", 10),
+    by_tier: {
+      IMMEDIATE: parseInt(row.immediate ?? "0", 10),
+      URGENT: parseInt(row.urgent ?? "0", 10),
+      STANDARD: parseInt(row.standard ?? "0", 10),
+      PAUSED: parseInt(row.paused ?? "0", 10),
+      MONITOR: parseInt(row.monitor ?? "0", 10),
+      pending: parseInt(row.pending ?? "0", 10),
+    }
   };
 }
 

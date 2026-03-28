@@ -156,6 +156,9 @@ async function getDetailedHealth(): Promise<Record<string, unknown>> {
   health["project_vic"] = !!process.env["PROJECT_VIC_API_KEY"];
   health["iwf"] = !!process.env["IWF_API_KEY"];
   health["deconfliction"] = !!process.env["RISSAFE_API_KEY"];
+  health["deconfliction_simulated"] =
+    process.env["TOOL_MODE"] !== "real" &&
+    !(process.env["DECONFLICTION_API_URL"] && process.env["DECONFLICTION_API_KEY"]);
   health["interpol"] = !!process.env["INTERPOL_ICSE_KEY"];
 
   // Stub directory
@@ -278,6 +281,7 @@ function generateEnvFile(c: SetupConfig): string {
   const secret = generateSecret();
   const dbPassword = generateSecret(20);
   const redisPassword = generateSecret(20);
+  const jwtSecret = generateSecret(64);
 
   const dbUrl =
     c.dbUrl ||
@@ -299,6 +303,8 @@ CONTACT_EMAIL="${c.contactEmail || ""}"
 PORT=${c.port || 3000}
 NODE_ENV=production
 CORS_ORIGIN=http://localhost:${c.port || 3000}
+AUTH_ENABLED=true
+JWT_SECRET=${jwtSecret}
 
 # ── Anthropic AI ──────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY=${c.apiKey || "REPLACE_WITH_KEY"}

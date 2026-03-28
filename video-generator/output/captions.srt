@@ -12,92 +12,96 @@ Every incoming tip is scored by AI
 
 4
 00:00:16,750 --> 00:00:18,400
-and assigned a priority tier — from
+and assigned a priority tier, from Immediate
 
 5
 00:00:18,500 --> 00:00:20,150
-Immediate down to Monitor. No more guessing
+down to Monitor, based on victim crisis
 
 6
 00:00:20,250 --> 00:00:21,900
-what to work first.
+indicators.
 
 7
 00:00:22,000 --> 00:00:27,900
-Filtering critical tips
+Priority filtering
 
 8
-00:00:28,000 --> 00:00:30,233
-Select the top tip. The detail pane
+00:00:28,000 --> 00:00:29,900
+Select the top tip to open its
 
 9
-00:00:30,333 --> 00:00:32,567
-shows the AI's crisis assessment, subject identifiers,
+00:00:30,000 --> 00:00:31,900
+detail pane. The system pulls in the
 
 10
-00:00:32,667 --> 00:00:34,900
-and the ESP's original report data.
+00:00:32,000 --> 00:00:33,900
+full NeCMEC report automatically.
 
 11
-00:00:35,000 --> 00:00:41,900
-Bundle deduplication
+00:00:34,000 --> 00:00:35,650
+Notice the cluster alert. The system detected
 
 12
-00:00:42,000 --> 00:00:48,900
-Wilson v. United States compliance
+00:00:35,750 --> 00:00:37,400
+three other tips linked to the same
 
 13
-00:00:49,000 --> 00:00:50,900
-Files the ESP never viewed are automatically
+00:00:37,500 --> 00:00:39,150
+viral incident and bundled them, eliminating duplicate
 
 14
-00:00:51,000 --> 00:00:52,900
-blocked. You cannot open them without a
+00:00:39,250 --> 00:00:40,900
+work.
 
 15
-00:00:53,000 --> 00:00:54,900
-warrant. The system enforces this — no
+00:00:41,000 --> 00:00:47,900
+Circuit-specific legal guidance
 
 16
-00:00:55,000 --> 00:00:56,900
-exceptions, no accidental Fourth Amendment violations.
+00:00:48,000 --> 00:00:50,400
+Now let's look at the files tab.
 
 17
-00:00:57,000 --> 00:01:03,900
-Integrated warrant tracking
+00:00:50,500 --> 00:00:52,900
+This is where Wilson compliance matters most.
 
 18
-00:01:04,000 --> 00:01:05,900
-When the warrant is granted, blocked files
+00:00:53,000 --> 00:01:00,900
+Auto-blocked — ESP did not view
 
 19
-00:01:06,000 --> 00:01:07,900
-unlock automatically. Full chain of custody is
+00:01:01,000 --> 00:01:03,233
+To access a blocked file, initiate the
 
 20
-00:01:08,000 --> 00:01:09,900
-logged for court.
+00:01:03,333 --> 00:01:05,567
+warrant workflow directly from this screen. Click
 
 21
-00:01:10,000 --> 00:01:12,233
-Every tip includes circuit-specific legal guidance. The
+00:01:05,667 --> 00:01:07,900
+to mark the warrant as applied.
 
 22
-00:01:12,333 --> 00:01:14,567
-system identifies your jurisdiction and surfaces relevant
+00:01:08,000 --> 00:01:14,900
+Automatic unblock on grant
 
 23
-00:01:14,667 --> 00:01:16,900
-case law and procedural requirements.
-
-24
-00:01:17,000 --> 00:01:21,900
+00:01:15,000 --> 00:01:20,900
 Supervisor panel
 
+24
+00:01:21,000 --> 00:01:22,900
+On-call investigators can triage from the field
+
 25
-00:01:22,000 --> 00:01:26,900
-Mobile on-call access
+00:01:23,000 --> 00:01:24,900
+using the mobile interface, with the same
 
 26
+00:01:25,000 --> 00:01:26,900
+priority scoring and compliance safeguards.
+
+27
 00:01:27,000 --> 00:01:31,900
-CyberTip Triage — Built for ICAC
+CyberTip Triage — Purpose-built for ICAC

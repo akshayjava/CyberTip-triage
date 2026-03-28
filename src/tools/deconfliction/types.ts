@@ -7,6 +7,12 @@ export interface DeconflictionResult {
   active_investigation: boolean;
   coordination_recommended: boolean;
   notes?: string;
+  /**
+   * WARNING: When true, this result was produced by a stub/simulated provider.
+   * It does NOT reflect real RISSafe/HighWay deconfliction databases.
+   * Investigators MUST verify manually before relying on this result.
+   */
+  simulated_warning?: boolean;
 }
 
 export interface DeconflictionProvider {
