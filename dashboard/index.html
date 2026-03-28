@@ -208,11 +208,12 @@
       );
     }
 
-    function TipRow({ tip, onClick, selected }) {
+    function TipRow({ tip, onClick, selected, deconflictionSimulated }) {
       const tier = tip.priority?.tier ?? 'pending';
       const score = tip.priority?.score ?? 0;
       const deadline = tip.classification?.esp_data_retention_deadline;
       const decon = tip.links?.deconfliction_matches?.some(m => m.active_investigation);
+      const deconSimulated = deconflictionSimulated || tip.links?.deconfliction_matches?.some(m => m.simulated_warning);
 
       return (
         <div
@@ -224,6 +225,7 @@
               <TierBadge tier={tier} />
               {tip.priority?.victim_crisis_alert && <span title="Crisis alert">🚨</span>}
               {decon && <span title="Deconfliction conflict" className="text-purple-400">⚠</span>}
+              {deconSimulated && <span title="Deconfliction result is simulated — verify manually" style={{background:'#78350f',color:'#fde68a',fontSize:'10px',fontWeight:'bold',padding:'1px 5px',borderRadius:'3px',border:'1px solid #d97706'}}>⚠ SIM</span>}
               {tip.classification?.aig_csam_flag && <span title="AIG-CSAM detected" className="text-yellow-500 text-xs font-bold">AIG</span>}
               {(tip.links?.cluster_flags?.length ?? 0) > 0 && (
                 <span title={`Cluster: ${tip.links.cluster_flags[0]?.cluster_type?.replace(/_/g, ' ')}`} className="cluster-alert text-orange-400 text-xs font-bold">CLU</span>
@@ -415,7 +417,7 @@
       );
     }
 
-    function TipDetail({ tip, onClose, onRefresh }) {
+    function TipDetail({ tip, onClose, onRefresh, deconflictionSimulated }) {
       const [tab, setTab] = useState('files');
       const [loading, setLoading] = useState(false);
       const [mlatData, setMlatData] = useState(null);
@@ -483,6 +485,7 @@
       };
 
       const decon = tip.links?.deconfliction_matches?.filter(m => m.active_investigation) ?? [];
+      const deconSimulated = deconflictionSimulated || (tip.links?.deconfliction_matches?.some(m => m.simulated_warning) ?? false);
       const p = tip.priority;
       const c = tip.classification;
       const e = tip.extracted;
@@ -520,6 +523,11 @@
           {p?.victim_crisis_alert && (
             <div className="crisis-banner px-4 py-2 text-sm">
               🚨 <strong>Victim Crisis Alert:</strong> {p.victim_crisis_alert_text}
+            </div>
+          )}
+          {deconSimulated && (
+            <div className="px-4 py-2 text-xs font-bold flex items-center gap-2" style={{background:'#78350f',color:'#fde68a',borderBottom:'1px solid #d97706'}}>
+              ⚠ DECONFLICTION SIMULATED — VERIFY MANUALLY: Results are from a stub provider, not a real RISSafe/HighWay database. Check manually before acting.
             </div>
           )}
           {decon.length > 0 && (
@@ -959,10 +967,19 @@
       const [page, setPage] = useState(0);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
+      const [deconflictionSimulated, setDeconflictionSimulated] = useState(true);
       const pollRef = useRef(null);
       // Refs keep polling closure fresh without re-creating the interval
       const tierRef = useRef('ALL');
       const pageRef = useRef(0);
+
+      // Fetch health once to determine if deconfliction is running in stub/simulated mode
+      useEffect(() => {
+        fetch('/health/detailed')
+          .then(r => r.ok ? r.json() : null)
+          .then(h => { if (h) setDeconflictionSimulated(h.deconfliction_simulated !== false); })
+          .catch(() => {}); // default true (simulated) on error — safe default
+      }, []);
 
       const doFetch = useCallback(async (tier, pageIdx) => {
         try {
@@ -998,6 +1015,17 @@
         pollRef.current = setInterval(() => doFetch(tierRef.current, pageRef.current), 15000);
         return () => clearInterval(pollRef.current);
       }, [doFetch]);
+
+      // Deep-link: if ?tip=TIP_ID is in the URL, pre-select that tip on load
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tipId = params.get('tip');
+        if (!tipId) return;
+        fetch(`${API}/tips/${tipId}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(tip => { if (tip) setSelectedTip(tip); })
+          .catch(() => {});
+      }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
       const refreshTip = useCallback(async () => {
         if (!selectedTip) return;
@@ -1081,6 +1109,7 @@
                       tip={tip}
                       onClick={setSelectedTip}
                       selected={selectedTip?.tip_id === tip.tip_id}
+                      deconflictionSimulated={deconflictionSimulated}
                     />
                   ))
                 )}
@@ -1114,6 +1143,7 @@
                   tip={selectedTip}
                   onClose={() => setSelectedTip(null)}
                   onRefresh={refreshTip}
+                  deconflictionSimulated={deconflictionSimulated}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-gray-600">
