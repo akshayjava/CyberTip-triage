@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 /**
  * Tip Processing Queue
  *
@@ -109,7 +110,7 @@ export async function enqueueTip(
   input: RawTipInput,
   options: EnqueueOptions = {}
 ): Promise<string> {
-  const jobId = `tip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const jobId = `tip-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const priority = options.priority ?? (input.source === "NCMEC_IDS" ? 2 : 5);
 
   if (process.env["QUEUE_MODE"] === "bullmq") {

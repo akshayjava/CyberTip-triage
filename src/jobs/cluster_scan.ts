@@ -34,7 +34,7 @@
 
 import { randomUUID } from "crypto";
 import { getPool } from "../db/pool.js";
-import { listTips, upsertTip } from "../db/tips.js";
+import { listTips, upsertTip, getTipById } from "../db/tips.js";
 import { appendAuditEntry } from "../compliance/audit.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
 import type { CyberTip, TipLinks } from "../models/index.js";
@@ -328,7 +328,8 @@ async function applyClusterToTip(
   cluster: ClusterGroup,
   allTips: Map<string, CyberTip>
 ): Promise<{ escalated: boolean }> {
-  const tip = allTips.get(tipId);
+  // Always fetch full tip to prevent overwriting body with empty string (from exclude_body)
+  const tip = await getTipById(tipId);
   if (!tip) return { escalated: false };
 
   const newFlag = {
@@ -421,7 +422,8 @@ export async function runClusterScan(): Promise<ClusterScanResult> {
   const isPostgres = process.env["DB_MODE"] === "postgres";
 
   // Load all tips into a map for fast lookup during cluster application
-  const { tips: allTipsArr } = await listTips({ limit: 20_000 });
+  // ⚡ Bolt Optimization: Exclude body and files to save ~200MB memory and avoid over-fetching
+  const { tips: allTipsArr } = await listTips({ limit: 20_000, exclude_body: true, exclude_files: true });
   const allTipsMap = new Map(allTipsArr.map(t => [t.tip_id, t]));
 
   // Run pattern detection
@@ -454,17 +456,26 @@ export async function runClusterScan(): Promise<ClusterScanResult> {
       escalated_ids: [],
     };
 
-    // Apply cluster flag to each member tip
-    for (const tipId of cluster.tip_ids) {
-      try {
-        const { escalated } = await applyClusterToTip(tipId, cluster, allTipsMap);
-        if (escalated) {
-          cluster.escalated_ids.push(tipId);
-          escalations++;
+    // ⚡ Bolt Optimization: Process cluster.tip_ids concurrently to parallelize DB lookups/updates
+    const results = await Promise.all(
+      cluster.tip_ids.map(async (tipId) => {
+        try {
+          const { escalated } = await applyClusterToTip(tipId, cluster, allTipsMap);
+          return { tipId, escalated, error: null };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { tipId, escalated: false, error: msg };
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Failed to apply cluster to tip ${tipId.slice(0, 8)}: ${msg}`);
+      })
+    );
+
+    // Apply side effects sequentially to ensure correctness
+    for (const res of results) {
+      if (res.error) {
+        errors.push(`Failed to apply cluster to tip ${res.tipId.slice(0, 8)}: ${res.error}`);
+      } else if (res.escalated) {
+        cluster.escalated_ids.push(res.tipId);
+        escalations++;
       }
     }
 

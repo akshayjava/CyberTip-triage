@@ -11,7 +11,8 @@
 import type { Application, Request, Response } from "express";
 import { getBundleStats, checkBundleDuplicate } from "../ingestion/bundle_dedup.js";
 import { checkHashDBCredentials } from "../tools/hash/check_watchlists.js";
-import { listTips, getTipById } from "../db/tips.js";
+import { listTips, getTipById, getDuplicatesForBundle, getHashMatchStats } from "../db/tips.js";
+import type { CyberTip, TipFile } from "../models/index.js";
 
 function wrapAsync(
   fn: (req: Request, res: Response) => Promise<void>
@@ -37,20 +38,15 @@ async function handleGetBundle(req: Request, res: Response): Promise<void> {
   if (!tip.is_bundled) { res.status(400).json({ error: "Tip is not a bundle" }); return; }
 
   // Count duplicates that reference this canonical
-  const { tips } = await listTips({ limit: 10_000 });
-  const duplicates = tips.filter(
-    t => t.status === "duplicate" && (t.links as { duplicate_of?: string })?.duplicate_of === tip.tip_id
-  );
+  // ⚡ Bolt Optimization: Push duplicate filtering to the database to prevent OOM
+  // from fetching 10,000 full tip records into memory just to count them.
+  const duplicates = await getDuplicatesForBundle(tip.tip_id);
 
   res.json({
     canonical: tip,
     duplicate_count: duplicates.length,
     total_incident_count: tip.bundled_incident_count ?? 1,
-    duplicates_absorbed: duplicates.map((d: any) => ({
-      tip_id: d.tip_id,
-      received_at: d.received_at,
-      source: d.source,
-    })),
+    duplicates_absorbed: duplicates,
   });
 }
 
@@ -79,45 +75,23 @@ async function handleHashStats(_req: Request, res: Response): Promise<void> {
   cutoff.setDate(cutoff.getDate() - 30);
   const cutoffISO = cutoff.toISOString();
 
-  const { tips } = await listTips({ limit: 10_000 });
-  const recent = tips.filter((t: any) => t.received_at >= cutoffISO);
-
-  let ncmecMatches = 0;
-  let projectVicMatches = 0;
-  let iwfMatches = 0;
-  let interpolMatches = 0;
-  let aigSuspected = 0;
-  let totalFilesChecked = 0;
-
-  for (const tip of recent) {
-    for (const f of tip.files ?? []) {
-      totalFilesChecked++;
-      if (f.ncmec_hash_match)    ncmecMatches++;
-      if (f.project_vic_match)   projectVicMatches++;
-      if (f.iwf_match)           iwfMatches++;
-      if (f.interpol_icse_match) interpolMatches++;
-      if (f.aig_csam_suspected)  aigSuspected++;
-    }
-  }
-
-  const anyMatch = recent.filter((t: any) =>
-    t.files?.some((f: any) => f.ncmec_hash_match || f.project_vic_match || f.iwf_match || f.interpol_icse_match)
-  ).length;
+  // ⚡ Bolt Optimization: push aggregation down to the database to prevent fetching 10,000 rows
+  const stats = await getHashMatchStats(cutoffISO);
 
   res.json({
     period_days: 30,
-    tips_analyzed: recent.length,
-    files_checked: totalFilesChecked,
+    tips_analyzed: stats.tips_analyzed,
+    files_checked: stats.files_checked,
     hash_matches: {
-      ncmec: ncmecMatches,
-      project_vic: projectVicMatches,
-      iwf: iwfMatches,
-      interpol_icse: interpolMatches,
-      any_db: anyMatch,
+      ncmec: stats.ncmec_matches,
+      project_vic: stats.project_vic_matches,
+      iwf: stats.iwf_matches,
+      interpol_icse: stats.interpol_icse_matches,
+      any_db: stats.any_db_match_tips,
     },
-    aig_csam_suspected: aigSuspected,
-    match_rate_pct: totalFilesChecked > 0
-      ? ((anyMatch / recent.length) * 100).toFixed(1)
+    aig_csam_suspected: stats.aig_csam_suspected,
+    match_rate_pct: stats.files_checked > 0
+      ? ((stats.any_db_match_tips / stats.tips_analyzed) * 100).toFixed(1)
       : "0.0",
     mode: process.env["TOOL_MODE"] === "real" ? "production" : "stub",
     generated_at: new Date().toISOString(),

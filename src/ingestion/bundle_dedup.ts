@@ -31,7 +31,7 @@
  */
 
 import { createHash } from "crypto";
-import { listTips, upsertTip, getTipById } from "../db/tips.js";
+import { listTips, upsertTip, getTipById, getBundleStatsData } from "../db/tips.js";
 import { appendAuditEntry } from "../compliance/audit.js";
 import type { CyberTip } from "../models/index.js";
 
@@ -106,9 +106,8 @@ const fingerprintCache = new Map<string, string>(); // fingerprint → canonical
 /** Pre-warm the cache from the database at startup */
 export async function warmBundleCache(): Promise<void> {
   try {
-    const { tips } = await listTips({ limit: 5000 });
+    const { tips } = await listTips({ is_bundled: true, limit: 5000, exclude_body: true });
     for (const tip of tips) {
-      if (!tip.is_bundled) continue;
       const sig = extractSignature(tip);
       const fp  = bundleFingerprint(sig);
       if (!fingerprintCache.has(fp)) {
@@ -156,10 +155,9 @@ export async function checkBundleDuplicate(incoming: CyberTip): Promise<BundleCh
   }
 
   // Slow path: scan DB for matching fingerprint
-  const { tips } = await listTips({ limit: 5000 });
+  const { tips } = await listTips({ is_bundled: true, limit: 5000, exclude_body: true });
   for (const existing of tips) {
     if (existing.tip_id === incoming.tip_id) continue;
-    if (!existing.is_bundled) continue;
 
     const existingSig = extractSignature(existing);
     const existingFp  = bundleFingerprint(existingSig);
@@ -280,24 +278,11 @@ export interface BundleStats {
 }
 
 export async function getBundleStats(): Promise<BundleStats> {
-  const { tips } = await listTips({ limit: 10_000 });
-  const bundles  = tips.filter((t: CyberTip) => t.is_bundled && t.status !== "duplicate");
-
-  let largest: { tip_id: string; count: number } | null = null;
-  let totalIncidents = 0;
-
-  for (const b of bundles) {
-    const count = b.bundled_incident_count ?? 1;
-    totalIncidents += count;
-    if (!largest || count > largest.count) {
-      largest = { tip_id: b.tip_id, count };
-    }
-  }
+  // ⚡ Bolt Optimization: Use optimized database aggregates instead of fetching and hydrating 10,000 records
+  const data = await getBundleStatsData();
 
   return {
-    unique_bundles:  bundles.length,
-    total_incidents: totalIncidents,
-    largest_bundle:  largest,
-    cache_size:      fingerprintCache.size,
+    ...data,
+    cache_size: fingerprintCache.size,
   };
 }

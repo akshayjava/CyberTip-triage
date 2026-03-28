@@ -16,13 +16,14 @@
  *   admin:        full system; officer management
  */
 
-import { createHmac, timingSafeEqual, randomBytes, pbkdf2Sync } from "crypto";
+import { createHmac, timingSafeEqual, randomBytes, pbkdf2Sync, createHash } from "crypto";
 import { randomUUID } from "crypto";
 import {
   getOfficerByBadge,
   recordLogin,
   revokeJTI,
   isJTIRevoked,
+  updatePasswordHash,
 } from "../db/officers.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -50,16 +51,28 @@ export interface LoginResponse { token: string; session: AuthSession; expires_at
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
-const SECRET          = process.env["JWT_SECRET"] ?? "CHANGE-ME-BEFORE-PRODUCTION-32CHARS!";
+const SECRET          = process.env["JWT_SECRET"];
+
+if (!SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
+
 const TOKEN_TTL       = 8 * 60 * 60;       // 8 hours in seconds
 const INACTIVITY_TTL  = 30 * 60 * 1000;    // 30 min in ms (CJIS § 5.6.2.1)
 
-const PBKDF2_ITERS  = 100_000;
+const PBKDF2_ITERS  = 600_000;
 const PBKDF2_KEYLEN = 32;
 const SALT_LEN      = 16;
 
 if (SECRET.length < 32) {
-  console.warn("[AUTH] WARNING: JWT_SECRET is short. Set a 256-bit secret in production.");
+  if (process.env["AUTH_ENABLED"] === "true") {
+    throw new Error(
+      `SECURITY FATAL: JWT_SECRET is only ${SECRET.length} characters. ` +
+      `AUTH_ENABLED=true requires a minimum 32-character (256-bit) secret. ` +
+      `Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+    );
+  }
+  console.warn("[AUTH] WARNING: JWT_SECRET is short (<32 chars). Set a 256-bit secret before enabling AUTH_ENABLED=true.");
 }
 
 // ── JWT internals ─────────────────────────────────────────────────────────────
@@ -103,9 +116,12 @@ export async function verifyToken(token: string): Promise<AuthSession | null> {
   // Timing-safe signature verification
   const expected = hmacSign(headerB64, payloadB64);
   try {
-    const expBuf = Buffer.from(expected, "utf8");
-    const sigBuf = Buffer.from(sig,      "utf8");
-    if (expBuf.length !== sigBuf.length || !timingSafeEqual(expBuf, sigBuf)) return null;
+    // Hash both signatures to ensure they are the same length
+    // and avoid timing attacks on string length or short-circuiting.
+    const expectedHash = createHash("sha256").update(expected).digest();
+    const actualHash = createHash("sha256").update(sig).digest();
+
+    if (!timingSafeEqual(expectedHash, actualHash)) return null;
   } catch {
     return null;
   }
@@ -141,6 +157,16 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
 
   if (!verifyPassword(req.password, officer.password_hash)) {
     throw new AuthError("Invalid badge number or password");
+  }
+
+  // Auto-upgrade hash if iterations are below current default
+  const hashParts = officer.password_hash.split(":");
+  if (hashParts.length === 4 && hashParts[0] === "pbkdf2") {
+    const iters = parseInt(hashParts[1], 10);
+    if (!isNaN(iters) && iters < PBKDF2_ITERS) {
+      const newHash = hashPassword(req.password);
+      await updatePasswordHash(officer.officer_id, newHash);
+    }
   }
 
   await recordLogin(officer.officer_id);

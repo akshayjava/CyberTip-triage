@@ -15,7 +15,7 @@
  *   5. Priority        → score, route, alert
  */
 
-import type { CyberTip, LegalStatus, Victim } from "./models/index.js";
+import type { CyberTip, LegalStatus, Victim, Classification, TipLinks, DeconflictionMatch } from "./models/index.js";
 import { appendAuditEntry } from "./compliance/audit.js";
 import { runIntakeAgent, type RawTipInput } from "./agents/intake.js";
 import { runLegalGateAgent } from "./agents/legal_gate.js";
@@ -132,25 +132,240 @@ function applyCriticalOverrides(tip: CyberTip): CyberTip {
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 export async function processTip(input: RawTipInput): Promise<CyberTip> {
-  const pipelineStart = Date.now();
-
   // ── Stage 0: Instant Demo Bypass ───────────────────────────────────────────
-  if ((process.env["DEMO_MODE"] === "true" || process.env["DB_MODE"] === "memory") && process.env["NODE_ENV"] !== "test") {
+  const demoTip = tryInstantDemoBypass(input);
+  if (demoTip) {
+    return demoTip;
+  }
+
+  // ── Stage 1: Intake ────────────────────────────────────────────────────────
+  let tip = await processIntakeStage(input);
+
+  // ── Stage 2: Legal Gate ────────────────────────────────────────────────────
+  tip = await processLegalGateStage(tip);
+  if (tip.status === "BLOCKED") return tip;
+
+  // ── Stage 3: Extraction + Hash/OSINT in parallel ───────────────────────────
+  tip = await processExtractionAndHashOsintStage(tip);
+
+  // ── Stage 4: Classifier + Linker in parallel ───────────────────────────────
+  tip = await processClassifierAndLinkerStage(tip);
+
+  // ── Stage 5: Priority ──────────────────────────────────────────────────────
+  tip = await processPriorityStage(tip);
+
+  emit(tip.tip_id, "complete", "done");
+  return tip;
+}
+
+// ── Stage 5: Priority Helper ──────────────────────────────────────────────────
+
+async function processPriorityStage(tip: CyberTip): Promise<CyberTip> {
+  emit(tip.tip_id, "priority", "running");
+
+  try {
+    const priorityResult = await runPriorityAgent(tip);
+    const updatedTip = {
+      ...tip,
+      priority: priorityResult,
+      preservation_requests: [
+        ...tip.preservation_requests,
+        ...(priorityResult.preservation_requests ?? []),
+      ],
+    };
+
+    // Set final status based on priority tier
+    if (priorityResult.tier === "PAUSED") {
+      updatedTip.status = "pending"; // Stays pending until supervisor resolves conflict
+    } else {
+      updatedTip.status = "triaged";
+    }
+
+    emit(updatedTip.tip_id, "priority", "done",
+      `Score: ${priorityResult.score} | Tier: ${priorityResult.tier}`);
+
+    return updatedTip;
+  } catch (err) {
+    await logAgentError(tip.tip_id, "PriorityAgent", err);
+    emit(tip.tip_id, "priority", "error");
+    // Keep pending for manual triage
+    return { ...tip, status: "pending" };
+  }
+}
+
+// ── Stage 4: Classifier & Linker Helper ───────────────────────────────────────
+
+async function processClassifierAndLinkerStage(tip: CyberTip): Promise<CyberTip> {
+  emit(tip.tip_id, "classifier", "running");
+  emit(tip.tip_id, "linker", "running");
+
+  const [classificationResult, linkerResult] = (await Promise.allSettled([
+    runClassifierAgent(tip),
+    runLinkerAgent(tip),
+  ])) as [PromiseSettledResult<Classification>, PromiseSettledResult<TipLinks>];
+
+  let updatedTip = { ...tip };
+
+  if (classificationResult.status === "fulfilled") {
+    updatedTip = { ...updatedTip, classification: classificationResult.value };
+    updatedTip = applyCriticalOverrides(updatedTip);
+    emit(updatedTip.tip_id, "classifier", "done",
+      `${classificationResult.value.offense_category} | ${classificationResult.value.severity.us_icac}`);
+  } else {
+    await logAgentError(updatedTip.tip_id, "ClassifierAgent", classificationResult.reason);
+    emit(updatedTip.tip_id, "classifier", "error");
+  }
+
+  if (linkerResult.status === "fulfilled") {
+    updatedTip = { ...updatedTip, links: linkerResult.value };
+    const paused = linkerResult.value.deconfliction_matches.some(
+      (m: DeconflictionMatch) => m.active_investigation
+    );
+    emit(updatedTip.tip_id, "linker", "done", paused ? "⚠️ Deconfliction conflict" : "Linked");
+  } else {
+    await logAgentError(updatedTip.tip_id, "LinkerAgent", linkerResult.reason);
+    emit(updatedTip.tip_id, "linker", "error");
+  }
+
+  return updatedTip;
+}
+
+// ── Stage 3: Extraction & Hash/OSINT Helper ───────────────────────────────────
+
+async function processExtractionAndHashOsintStage(tip: CyberTip): Promise<CyberTip> {
+  emit(tip.tip_id, "extraction", "running");
+  emit(tip.tip_id, "hash_osint", "running");
+
+  const [extractionResult, hashOsintResult] = await Promise.allSettled([
+    runExtractionAgent(tip),
+    runHashOsintAgent(tip),
+  ]);
+
+  let updatedTip = { ...tip };
+
+  if (extractionResult.status === "fulfilled") {
+    updatedTip = { ...updatedTip, extracted: extractionResult.value };
+    emit(updatedTip.tip_id, "extraction", "done");
+  } else {
+    await logAgentError(updatedTip.tip_id, "ExtractionAgent", extractionResult.reason);
+    emit(updatedTip.tip_id, "extraction", "error");
+  }
+
+  if (hashOsintResult.status === "fulfilled") {
+    updatedTip = { ...updatedTip, hash_matches: hashOsintResult.value };
+    // Apply hash match results back to individual TipFile records
+    updatedTip = applyHashResultsToFiles(updatedTip);
+    emit(updatedTip.tip_id, "hash_osint", "done",
+      hashOsintResult.value.any_match ? "Hash match found" : "No matches");
+  } else {
+    await logAgentError(updatedTip.tip_id, "HashOsintAgent", hashOsintResult.reason);
+    emit(updatedTip.tip_id, "hash_osint", "error");
+  }
+
+  return updatedTip;
+}
+
+// ── Stage 2: Legal Gate Helper ────────────────────────────────────────────────
+
+async function processLegalGateStage(tip: CyberTip): Promise<CyberTip> {
+  emit(tip.tip_id, "legal_gate", "running");
+
+  try {
+    const legalResult = await runLegalGateAgent(tip);
+    const updatedTip = {
+      ...tip,
+      legal_status: legalResult.legal_status,
+      files: legalResult.files,
+    };
+    emit(updatedTip.tip_id, "legal_gate", "done",
+      `${legalResult.files.filter((f) => f.file_access_blocked).length} files blocked`);
+
+    // Hard stop: Legal Gate returned low confidence with all files blocked
+    if (
+      legalResult.confidence < 0.5 &&
+      !legalResult.legal_status.any_files_accessible &&
+      updatedTip.files.length > 0
+    ) {
+      updatedTip.status = "BLOCKED";
+      updatedTip.legal_status = {
+        ...legalResult.legal_status,
+        legal_note:
+          legalResult.legal_status.legal_note +
+          " PIPELINE HALTED: Low confidence with no accessible files. Manual legal review required.",
+      };
+      emit(updatedTip.tip_id, "blocked", "blocked", "Low confidence legal gate");
+      return updatedTip;
+    }
+    return updatedTip;
+  } catch (err) {
+    // Legal Gate failure = hard block — never continue
+    const blockedTip = { ...tip, status: "BLOCKED" as const };
+    blockedTip.legal_status = buildEmergencyBlockedStatus(
+      `Legal Gate agent threw: ${err instanceof Error ? err.message : String(err)}`
+    );
+    await logAgentError(blockedTip.tip_id, "LegalGateAgent", err);
+    emit(blockedTip.tip_id, "blocked", "blocked", "Legal gate agent error");
+    return blockedTip;
+  }
+}
+
+// ── Stage 1: Intake Helper ────────────────────────────────────────────────────
+
+async function processIntakeStage(input: RawTipInput): Promise<CyberTip> {
+  emit("pending", "intake", "running");
+  const tip = await runIntakeAgent(input);
+  emit(tip.tip_id, "intake", "done");
+
+  await appendAuditEntry({
+    tip_id: tip.tip_id,
+    agent: "Orchestrator",
+    timestamp: new Date().toISOString(),
+    status: "success",
+    summary: `Pipeline started. Source: ${input.source}. Files: ${tip.files.length}.`,
+  });
+
+  return tip;
+}
+
+// ── Stage 0: Instant Demo Bypass Helper ───────────────────────────────────────
+
+function tryInstantDemoBypass(input: RawTipInput): CyberTip | null {
+  if (
+    (process.env["DEMO_MODE"] === "true" || process.env["DB_MODE"] === "memory") &&
+    process.env["NODE_ENV"] !== "test"
+  ) {
     const rawContent = input.raw_content.toLowerCase();
     const tipId = crypto.randomUUID();
 
     let tier: any = "STANDARD";
     let score = 50;
-    if (rawContent.includes("critical") || rawContent.includes("imminent") || rawContent.includes("active streaming") || rawContent.includes("infant")) {
+    if (
+      rawContent.includes("critical") ||
+      rawContent.includes("imminent") ||
+      rawContent.includes("active streaming") ||
+      rawContent.includes("infant")
+    ) {
       tier = "IMMEDIATE";
       score = 98;
-    } else if (rawContent.includes("priority") || rawContent.includes("sextortion") || rawContent.includes("grooming")) {
+    } else if (
+      rawContent.includes("priority") ||
+      rawContent.includes("sextortion") ||
+      rawContent.includes("grooming")
+    ) {
       tier = "URGENT";
       score = 82;
-    } else if (rawContent.includes("vague") || rawContent.includes("suspicious user") || rawContent.includes("record only")) {
+    } else if (
+      rawContent.includes("vague") ||
+      rawContent.includes("suspicious user") ||
+      rawContent.includes("record only")
+    ) {
       tier = "MONITOR";
       score = 15;
-    } else if (rawContent.includes("historical") || rawContent.includes("archived") || rawContent.includes("2018")) {
+    } else if (
+      rawContent.includes("historical") ||
+      rawContent.includes("archived") ||
+      rawContent.includes("2018")
+    ) {
       tier = "STANDARD";
       score = 45;
     } else if (rawContent.includes("discord") || rawContent.includes("gaminghub")) {
@@ -168,24 +383,32 @@ export async function processTip(input: RawTipInput): Promise<CyberTip> {
         primary: "US_federal",
         countries_involved: ["US"],
         interpol_referral_indicated: false,
-        europol_referral_indicated: false
+        europol_referral_indicated: false,
       },
       reporter: { type: "member_public" },
       status: "triaged",
       priority: {
         score,
         tier,
-        scoring_factors: [{ factor: "Demo Optimization", applied: true, contribution: score, rationale: "Fast-path demo categorization." }],
+        scoring_factors: [
+          {
+            factor: "Demo Optimization",
+            applied: true,
+            contribution: score,
+            rationale: "Fast-path demo categorization.",
+          },
+        ],
         routing_unit: "ICAC Specialist Unit",
         recommended_action: "Proceed with walkthrough.",
-        supervisor_alert: tier === "IMMEDIATE"
+        supervisor_alert: tier === "IMMEDIATE",
       },
       legal_status: {
         all_warrants_resolved: true,
         any_files_accessible: true,
         files_requiring_warrant: [],
-        legal_note: "Valid Wilson Rule assessment complete. All files unblocked for demo.",
-        exigent_circumstances_claimed: false
+        legal_note:
+          "Valid Wilson Rule assessment complete. All files unblocked for demo.",
+        exigent_circumstances_claimed: false,
       },
       files: [
         {
@@ -203,7 +426,7 @@ export async function processTip(input: RawTipInput): Promise<CyberTip> {
           project_vic_match: false,
           iwf_match: false,
           interpol_icse_match: false,
-          aig_csam_suspected: false
+          aig_csam_suspected: false,
         },
         {
           file_id: crypto.randomUUID(),
@@ -220,184 +443,95 @@ export async function processTip(input: RawTipInput): Promise<CyberTip> {
           project_vic_match: false,
           iwf_match: false,
           interpol_icse_match: false,
-          aig_csam_suspected: false
-        }
+          aig_csam_suspected: false,
+        },
       ],
-      audit_trail: [{
-        agent: "Orchestrator",
-        tip_id: tipId,
-        timestamp: new Date().toISOString(),
-        duration_ms: 0,
-        status: "success",
-        summary: "Instant demo bypass applied."
-      }],
-      extracted: { subjects: [], victims: [], ip_addresses: [], email_addresses: [], urls: [], domains: [], usernames: [], phone_numbers: [], device_identifiers: [], file_hashes: [], crypto_addresses: [], game_platform_ids: [], messaging_app_ids: [], dark_web_urls: [], geographic_indicators: [], venues: [], dates_mentioned: [], urgency_indicators: [], referenced_platforms: [], data_retention_notes: [], victim_crisis_indicators: [] },
-      hash_matches: { any_match: false, match_sources: [], victim_identified_previously: false, aig_csam_detected: false, osint_findings: [], dark_web_indicators: [], per_file_results: [] },
+      audit_trail: [
+        {
+          agent: "Orchestrator",
+          tip_id: tipId,
+          timestamp: new Date().toISOString(),
+          duration_ms: 0,
+          status: "success",
+          summary: "Instant demo bypass applied.",
+        },
+      ],
+      extracted: {
+        subjects: [],
+        victims: [],
+        ip_addresses: [],
+        email_addresses: [],
+        urls: [],
+        domains: [],
+        usernames: [],
+        phone_numbers: [],
+        device_identifiers: [],
+        file_hashes: [],
+        crypto_addresses: [],
+        game_platform_ids: [],
+        messaging_app_ids: [],
+        dark_web_urls: [],
+        geographic_indicators: [],
+        venues: [],
+        dates_mentioned: [],
+        urgency_indicators: [],
+        referenced_platforms: [],
+        data_retention_notes: [],
+        victim_crisis_indicators: [],
+      },
+      hash_matches: {
+        any_match: false,
+        match_sources: [],
+        victim_identified_previously: false,
+        aig_csam_detected: false,
+        osint_findings: [],
+        dark_web_indicators: [],
+        per_file_results: [],
+      },
       classification: {
         offense_category: "OTHER",
         secondary_categories: [],
         aig_csam_flag: false,
         sextortion_victim_in_crisis: false,
         e2ee_data_gap: false,
-        severity: { us_icac: tier === "IMMEDIATE" ? "P1_CRITICAL" : tier === "URGENT" ? "P2_HIGH" : "P3_MEDIUM" },
-        jurisdiction: { primary: "US_federal", countries_involved: ["US"], interpol_referral_indicated: false, europol_referral_indicated: false },
+        severity: {
+          us_icac:
+            tier === "IMMEDIATE"
+              ? "P1_CRITICAL"
+              : tier === "URGENT"
+              ? "P2_HIGH"
+              : "P3_MEDIUM",
+        },
+        jurisdiction: {
+          primary: "US_federal",
+          countries_involved: ["US"],
+          interpol_referral_indicated: false,
+          europol_referral_indicated: false,
+        },
         mlat_likely_required: false,
         applicable_statutes: [],
         confidence: 1.0,
-        reasoning: "Demo"
+        reasoning: "Demo",
       },
-      links: { related_tip_ids: [], matching_subject_ids: [], open_case_numbers: [], deconfliction_matches: [], cluster_flags: [], mlat_required: false, link_confidence: 1.0, link_reasoning: "Demo" },
+      links: {
+        related_tip_ids: [],
+        matching_subject_ids: [],
+        open_case_numbers: [],
+        deconfliction_matches: [],
+        cluster_flags: [],
+        mlat_required: false,
+        link_confidence: 1.0,
+        link_reasoning: "Demo",
+      },
       is_bundled: false,
       ncmec_urgent_flag: tier === "IMMEDIATE",
-      preservation_requests: []
+      preservation_requests: [],
     };
 
     emit(tipId, "complete", "done");
     return tip;
   }
-
-  // ── Stage 1: Intake ────────────────────────────────────────────────────────
-  emit("pending", "intake", "running");
-  let tip = await runIntakeAgent(input);
-  emit(tip.tip_id, "intake", "done");
-
-  await appendAuditEntry({
-    tip_id: tip.tip_id,
-    agent: "Orchestrator",
-    timestamp: new Date().toISOString(),
-    status: "success",
-    summary: `Pipeline started. Source: ${input.source}. Files: ${tip.files.length}.`,
-  });
-
-  // ── Stage 2: Legal Gate ────────────────────────────────────────────────────
-  emit(tip.tip_id, "legal_gate", "running");
-
-  try {
-    const legalResult = await runLegalGateAgent(tip);
-    tip = {
-      ...tip,
-      legal_status: legalResult.legal_status,
-      files: legalResult.files,
-    };
-    emit(tip.tip_id, "legal_gate", "done",
-      `${legalResult.files.filter((f) => f.file_access_blocked).length} files blocked`);
-
-    // Hard stop: Legal Gate returned low confidence with all files blocked
-    if (
-      legalResult.confidence < 0.5 &&
-      !legalResult.legal_status.any_files_accessible &&
-      tip.files.length > 0
-    ) {
-      tip.status = "BLOCKED";
-      tip.legal_status = {
-        ...legalResult.legal_status,
-        legal_note:
-          legalResult.legal_status.legal_note +
-          " PIPELINE HALTED: Low confidence with no accessible files. Manual legal review required.",
-      };
-      emit(tip.tip_id, "blocked", "blocked", "Low confidence legal gate");
-      return tip;
-    }
-  } catch (err) {
-    // Legal Gate failure = hard block — never continue
-    tip.status = "BLOCKED";
-    tip.legal_status = buildEmergencyBlockedStatus(
-      `Legal Gate agent threw: ${err instanceof Error ? err.message : String(err)}`
-    );
-    await logAgentError(tip.tip_id, "LegalGateAgent", err);
-    emit(tip.tip_id, "blocked", "blocked", "Legal gate agent error");
-    return tip;
-  }
-
-  // ── Stage 3: Extraction + Hash/OSINT in parallel ───────────────────────────
-  emit(tip.tip_id, "extraction", "running");
-  emit(tip.tip_id, "hash_osint", "running");
-
-  const [extractionResult, hashOsintResult] = await Promise.allSettled([
-    runExtractionAgent(tip),
-    runHashOsintAgent(tip),
-  ]);
-
-  if (extractionResult.status === "fulfilled") {
-    tip = { ...tip, extracted: extractionResult.value };
-    emit(tip.tip_id, "extraction", "done");
-  } else {
-    await logAgentError(tip.tip_id, "ExtractionAgent", extractionResult.reason);
-    emit(tip.tip_id, "extraction", "error");
-  }
-
-  if (hashOsintResult.status === "fulfilled") {
-    tip = { ...tip, hash_matches: hashOsintResult.value };
-    // Apply hash match results back to individual TipFile records
-    tip = applyHashResultsToFiles(tip);
-    emit(tip.tip_id, "hash_osint", "done",
-      hashOsintResult.value.any_match ? "Hash match found" : "No matches");
-  } else {
-    await logAgentError(tip.tip_id, "HashOsintAgent", hashOsintResult.reason);
-    emit(tip.tip_id, "hash_osint", "error");
-  }
-
-  // ── Stage 4: Classifier + Linker in parallel ───────────────────────────────
-  emit(tip.tip_id, "classifier", "running");
-  emit(tip.tip_id, "linker", "running");
-
-  const [classificationResult, linkerResult] = await Promise.allSettled([
-    runClassifierAgent(tip),
-    runLinkerAgent(tip),
-  ]);
-
-  if (classificationResult.status === "fulfilled") {
-    tip = { ...tip, classification: classificationResult.value };
-    tip = applyCriticalOverrides(tip);
-    emit(tip.tip_id, "classifier", "done",
-      `${classificationResult.value.offense_category} | ${classificationResult.value.severity.us_icac}`);
-  } else {
-    await logAgentError(tip.tip_id, "ClassifierAgent", classificationResult.reason);
-    emit(tip.tip_id, "classifier", "error");
-  }
-
-  if (linkerResult.status === "fulfilled") {
-    tip = { ...tip, links: linkerResult.value };
-    const paused = linkerResult.value.deconfliction_matches.some(
-      (m) => m.active_investigation
-    );
-    emit(tip.tip_id, "linker", "done", paused ? "⚠️ Deconfliction conflict" : "Linked");
-  } else {
-    await logAgentError(tip.tip_id, "LinkerAgent", linkerResult.reason);
-    emit(tip.tip_id, "linker", "error");
-  }
-
-  // ── Stage 5: Priority ──────────────────────────────────────────────────────
-  emit(tip.tip_id, "priority", "running");
-
-  try {
-    const priorityResult = await runPriorityAgent(tip);
-    tip = {
-      ...tip,
-      priority: priorityResult,
-      preservation_requests: [
-        ...tip.preservation_requests,
-        ...(priorityResult.preservation_requests ?? []),
-      ],
-    };
-
-    // Set final status based on priority tier
-    if (priorityResult.tier === "PAUSED") {
-      tip.status = "pending"; // Stays pending until supervisor resolves conflict
-    } else {
-      tip.status = "triaged";
-    }
-
-    emit(tip.tip_id, "priority", "done",
-      `Score: ${priorityResult.score} | Tier: ${priorityResult.tier}`);
-  } catch (err) {
-    await logAgentError(tip.tip_id, "PriorityAgent", err);
-    emit(tip.tip_id, "priority", "error");
-    tip.status = "pending"; // Keep pending for manual triage
-  }
-
-  emit(tip.tip_id, "complete", "done");
-  return tip;
+  return null;
 }
 
 // ── Apply per-file hash results to TipFile records ────────────────────────────

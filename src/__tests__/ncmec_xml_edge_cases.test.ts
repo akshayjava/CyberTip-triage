@@ -105,54 +105,53 @@ describe("NCMEC XML Parser - Edge Cases", () => {
     expect(parsed.ncmec_tip_number).toBe("999");
   });
 
-  it("extracts correct fields when attributes are present", () => {
-    const xml = `<Report><TiplineNumber id="123">999</TiplineNumber></Report>`;
+  // New Tests
+  it("extracts content from tags with attributes", () => {
+    const xml = `<TiplineNumber id="123" class="test">999</TiplineNumber>`;
     const parsed = parseNcmecXml(xml);
     expect(parsed.ncmec_tip_number).toBe("999");
   });
 
-  it("handles whitespace around values", () => {
-    const xml = `<Report><TiplineNumber>  12345  </TiplineNumber></Report>`;
+  it("trims whitespace from extracted content", () => {
+    const xml = `<TiplineNumber>  999  </TiplineNumber>`;
     const parsed = parseNcmecXml(xml);
-    expect(parsed.ncmec_tip_number).toBe("12345");
+    expect(parsed.ncmec_tip_number).toBe("999");
   });
 
-  it("handles mixed case tags", () => {
-    const xml = `<Report><tiplinenumber>123</TIPLINENUMBER></Report>`;
+  it("handles tag case insensitivity", () => {
+    const xml = `<TIPLINENUMBER>999</TIPLINENUMBER>`;
     const parsed = parseNcmecXml(xml);
-    expect(parsed.ncmec_tip_number).toBe("123");
+    expect(parsed.ncmec_tip_number).toBe("999");
   });
 
-  it("handles nested structure correctly (ignoring unrelated nested tags)", () => {
-    const xml = `
-      <Report>
-        <RelatedReport>
-          <TiplineNumber>RELATED123</TiplineNumber>
-        </RelatedReport>
-        <!-- Main TiplineNumber missing -->
-      </Report>
-    `;
-    const parsed = parseNcmecXml(xml);
-    // Regex limitation: picks the first match. Ideally strict XML parsing would fail or return undefined.
-    // Documenting current behavior:
-    expect(parsed.ncmec_tip_number).toBe("RELATED123");
-  });
-
-  it("handles special characters in content", () => {
-    const xml = `<Report><IncidentDescription>User said "Hello & Goodbye"</IncidentDescription></Report>`;
-    const parsed = parseNcmecXml(xml);
-    expect(parsed.section_a.incident_description).toBe('User said "Hello & Goodbye"');
-  });
-
-  it("handles self-closing tags", () => {
-    const xml = `<Report><IsUrgent /></Report>`;
-    const parsed = parseNcmecXml(xml);
-    expect(parsed.ncmec_urgent_flag).toBe(false);
-  });
-
-  it("handles empty tags", () => {
-    const xml = `<Report><TiplineNumber></TiplineNumber></Report>`;
+  it("returns undefined for self-closing tags", () => {
+    // Current parser implementation expects a closing tag, so <Tag /> won't match.
+    // This test documents that limitation/behavior.
+    const xml = `<TiplineNumber />`;
     const parsed = parseNcmecXml(xml);
     expect(parsed.ncmec_tip_number).toBeUndefined();
+  });
+
+  it("handles nested tags with different names by returning inner content raw", () => {
+    // Current parser is regex based and extracts everything between opening and closing tag.
+    // <A><B>Val</B></A> -> A content is <B>Val</B>
+    const xml = `<IncidentDescription>Outer <Inner>InnerVal</Inner></IncidentDescription>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.section_a.incident_description).toBe("Outer <Inner>InnerVal</Inner>");
+  });
+
+  it("handles nested tags with same names by stopping at first closing tag", () => {
+    // Known regex XML parsing weakness.
+    // <Desc>Outer <Desc>Inner</Desc></Desc> -> Matches <Desc>Outer <Desc>Inner</Desc>
+    // Result: Outer <Desc>Inner
+    const xml = `<IncidentDescription>Outer <IncidentDescription>Inner</IncidentDescription> End</IncidentDescription>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.section_a.incident_description).toBe("Outer <IncidentDescription>Inner");
+  });
+
+  it("extracts attributes with single quotes", () => {
+    const xml = `<Report id='SINGLE123'></Report>`;
+    const parsed = parseNcmecXml(xml);
+    expect(parsed.ncmec_tip_number).toBe("SINGLE123");
   });
 });

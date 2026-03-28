@@ -40,14 +40,16 @@ import type { Application, Request, Response } from "express";
 // Tier 2.1
 import { generatePreservationLetter, type LetterInput } from "../tools/preservation/letter_generator.js";
 import { generatePreservationLetterPDF, type AgencyInfo } from "../tools/preservation/letter_pdf.js";
-import { issuePreservationRequest, getTipById } from "../db/tips.js";
+import { issuePreservationRequest, getTipById, getTipByPreservationId } from "../db/tips.js";
 
 // Tier 2.2
 import {
   openWarrantApplication,
   recordWarrantGrant,
   recordWarrantDenial,
+  submitWarrantToDA,
   getWarrantApplications,
+  getWarrantApplicationById,
   type WarrantApplication,
 } from "../tools/legal/warrant_workflow.js";
 import { generateWarrantAffidavit } from "../tools/legal/warrant_affidavit.js";
@@ -70,6 +72,7 @@ import {
 
 import { appendAuditEntry } from "../compliance/audit.js";
 import type { CyberTip, TipFile } from "../models/index.js";
+import { loginLimiter } from "../middleware/rate-limit.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -200,13 +203,8 @@ async function handleDownloadPreservationPDF(req: Request, res: Response): Promi
   const requestId = req.params["id"] ?? "";
   const session   = req.session;
 
-  // Find the tip containing this preservation request
-  // We do a broad search — in production this would be a direct DB lookup
-  const { listTips } = await import("../db/tips.js");
-  const { tips }     = await listTips({ limit: 1000 });
-  const tip          = tips.find((t) =>
-    t.preservation_requests?.some((pr: any) => pr.request_id === requestId)
-  );
+  // Find the tip containing this preservation request via direct lookup
+  const tip = await getTipByPreservationId(requestId);
 
   if (!tip) { res.status(404).json({ error: "Preservation request not found" }); return; }
 
@@ -299,23 +297,14 @@ async function handleOpenWarrantApplication(req: Request, res: Response): Promis
 
 async function handleGetWarrantApplications(req: Request, res: Response): Promise<void> {
   const tipId = req.params["id"] ?? "";
-  const apps  = getWarrantApplications(tipId);
+  const apps  = await getWarrantApplications(tipId);
   res.json(apps);
 }
 
 async function handleGetWarrantApplication(req: Request, res: Response): Promise<void> {
   const appId = req.params["appId"] ?? "";
-  // getWarrantApplications returns all — search across all tips in memory
-  // In production this would be a direct DB query
-  const allApps: WarrantApplication[] = [];
-  // Small search: we expose a filter by appId across the module
-  const { listTips } = await import("../db/tips.js");
-  const { tips } = await listTips({ limit: 500 });
-  for (const tip of tips) {
-    const apps = getWarrantApplications(tip.tip_id);
-    const found = apps.find((a) => a.application_id === appId);
-    if (found) { res.json(found); return; }
-  }
+  const found = await getWarrantApplicationById(appId);
+  if (found) { res.json(found); return; }
   res.status(404).json({ error: "Warrant application not found" });
 }
 
@@ -324,24 +313,11 @@ async function handleSubmitWarrantToDA(req: Request, res: Response): Promise<voi
   const session = req.session;
   const { da_name } = req.body as { da_name?: string };
 
-  // Find application
-  const { listTips } = await import("../db/tips.js");
-  const { tips } = await listTips({ limit: 500 });
-  let foundApp: WarrantApplication | null = null;
-  for (const tip of tips) {
-    const apps = getWarrantApplications(tip.tip_id);
-    const app  = apps.find((a) => a.application_id === appId);
-    if (app) { foundApp = app; break; }
-  }
-  if (!foundApp) { res.status(404).json({ error: "Application not found" }); return; }
-
-  foundApp.status       = "pending_da_review";
-  foundApp.da_name      = da_name ?? foundApp.da_name;
-  foundApp.submitted_at = new Date().toISOString();
-  foundApp.updated_at   = new Date().toISOString();
+  const updatedApp = await submitWarrantToDA(appId, da_name);
+  if (!updatedApp) { res.status(404).json({ error: "Application not found" }); return; }
 
   await appendAuditEntry({
-    tip_id:    foundApp.tip_id,
+    tip_id:    updatedApp.tip_id,
     agent:     "HumanAction",
     timestamp: new Date().toISOString(),
     status:    "success",
@@ -349,7 +325,7 @@ async function handleSubmitWarrantToDA(req: Request, res: Response): Promise<voi
     human_actor: session?.badge_number,
   });
 
-  res.json(foundApp);
+  res.json(updatedApp);
 }
 
 async function handleGrantWarrant(req: Request, res: Response): Promise<void> {
@@ -677,7 +653,7 @@ export function mountTier2Routes(app: Application): void {
   app.get("/api/reports/ojjdp/download", wrapAsync(handleOJJDPDownload));
 
   // 2.4 — Auth
-  app.post("/api/auth/login",           wrapAsync(handleLogin));
+  app.post("/api/auth/login",           loginLimiter, wrapAsync(handleLogin));
   app.post("/api/auth/refresh",         wrapAsync(handleRefresh));
   app.post("/api/auth/logout",          wrapAsync(handleLogout));
   app.get ("/api/auth/me",              wrapAsync(handleMe));

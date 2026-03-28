@@ -28,6 +28,7 @@ import { enqueueTip } from "./queue.js";
 import type { IngestionConfig } from "./config.js";
 import { parseNcmecPdfText, validateNcmecPdf } from "../parsers/ncmec_pdf.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
+import PQueue from "p-queue";
 
 // ── Processed-tip tracking (in-memory; backed by DB on postgres builds) ────────
 
@@ -119,7 +120,7 @@ async function extractPdfFromZip(zipBuffer: Buffer): Promise<Buffer> {
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────────
 
-interface IdsSession {
+export interface IdsSession {
   cookie: string;
   authenticated_at: number;
   expires_at: number;   // epoch ms
@@ -236,7 +237,7 @@ async function authenticateIds(
 
 // ── Fetch new tip list from dashboard ─────────────────────────────────────────
 
-interface IdsTipRef {
+export interface IdsTipRef {
   tip_id:       string;
   download_url: string;
   urgent:       boolean;
@@ -303,11 +304,16 @@ async function fetchNewTipRefs(
 
 // ── Download and extract tip ZIP ───────────────────────────────────────────────
 
-async function downloadAndExtractTip(
+export async function downloadAndExtractTip(
   tipRef: IdsTipRef,
   session: IdsSession,
   downloadDir: string
 ): Promise<string> {
+  // Security check: prevent path traversal via tip_id
+  if (!/^[a-zA-Z0-9_-]+$/.test(tipRef.tip_id)) {
+    throw new Error(`Invalid tip_id: ${tipRef.tip_id}`);
+  }
+
   const nodeFetch = (await import("node-fetch" as string) as { default: typeof fetch }).default;
 
   const resp = await withRetry(
@@ -445,9 +451,11 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
 
       console.log(`[IDS] Found ${tipRefs.length} new tip(s)`);
 
-      for (const tipRef of tipRefs) {
+      const queue = new PQueue({ concurrency: 5 });
+
+      const processingTasks = tipRefs.map((tipRef) => queue.add(async () => {
         try {
-          const pdfText = await downloadAndExtractTip(tipRef, session, config.ids_portal.download_dir);
+          const pdfText = await downloadAndExtractTip(tipRef, session!, config.ids_portal.download_dir);
 
           // Validate PDF structure before enqueueing
           const parsed = parseNcmecPdfText(pdfText);
@@ -489,7 +497,9 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
           console.error(`[IDS] Failed to process tip ${tipRef.tip_id}:`, tipErr);
           // Don't add to processedTipIds — will retry on next poll
         }
-      }
+      }));
+
+      await Promise.all(processingTasks);
 
       consecutiveFailures = 0;
     } catch (err) {
