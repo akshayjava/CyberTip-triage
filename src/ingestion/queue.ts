@@ -144,27 +144,24 @@ export async function enqueueTip(
 }
 
 export function getQueueStats(): QueueStats {
-  // ⚡ Bolt Optimization: Replace 4 O(N) filter loops with a single O(N) pass to count all statuses
-  let waiting = 0;
-  let active = 0;
-  let completed = 0;
-  let failed = 0;
-
-  for (let i = 0; i < inMemoryQueue.length; i++) {
-    const status = inMemoryQueue[i]!.status;
-    if (status === "waiting") waiting++;
-    else if (status === "active") active++;
-    else if (status === "completed") completed++;
-    else if (status === "failed") failed++;
-  }
-
-  return {
-    waiting,
-    active,
-    completed,
-    failed,
+  // O(N) single pass to count job statuses instead of O(4N) multiple filters
+  const stats: QueueStats = {
+    waiting: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
     total: inMemoryQueue.length,
   };
+
+  for (let i = 0; i < inMemoryQueue.length; i++) {
+    const status = inMemoryQueue[i].status;
+    if (status === "waiting") stats.waiting++;
+    else if (status === "active") stats.active++;
+    else if (status === "completed") stats.completed++;
+    else if (status === "failed") stats.failed++;
+  }
+
+  return stats;
 }
 
 export function getJobStatus(jobId: string): QueuedJob | undefined {

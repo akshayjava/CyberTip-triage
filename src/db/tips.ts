@@ -22,6 +22,13 @@ import type { CyberTip, TipFile } from "../models/index.js";
 
 const memStore = new Map<string, CyberTip>();
 
+/**
+ * Secondary index: preservation request_id → tip_id.
+ * Maintained in upsertTip so getTipByPreservationId avoids an O(n) scan
+ * over memStore in dev/test mode.
+ */
+const memPreservationIndex = new Map<string, string>();
+
 function isPostgres(): boolean {
   return process.env["DB_MODE"] === "postgres";
 }
@@ -61,6 +68,10 @@ export interface ListTipsResult {
 export async function upsertTip(tip: CyberTip): Promise<void> {
   if (!isPostgres()) {
     memStore.set(tip.tip_id, tip);
+    // Keep preservation index up to date for O(1) lookups by request_id
+    for (const pr of tip.preservation_requests) {
+      memPreservationIndex.set(pr.request_id, tip.tip_id);
+    }
     return;
   }
 
@@ -282,12 +293,10 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
 
 export async function getTipByPreservationId(requestId: string): Promise<CyberTip | null> {
   if (!isPostgres()) {
-    for (const tip of memStore.values()) {
-      if (tip.preservation_requests?.some((pr: any) => pr.request_id === requestId)) {
-        return tip;
-      }
-    }
-    return null;
+    // O(1) lookup via secondary index maintained by upsertTip
+    const tipId = memPreservationIndex.get(requestId);
+    if (!tipId) return null;
+    return memStore.get(tipId) ?? null;
   }
 
   const pool = getPool();
