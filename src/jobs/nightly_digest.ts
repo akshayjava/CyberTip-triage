@@ -105,13 +105,13 @@ async function sendNightlyDigest(): Promise<void> {
       `${dateLabel} — generated at ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`,
       "=".repeat(52),
       "",
-      `OVERNIGHT ACTIVITY (${windowLabel})`,
+      `SHIFT ACTIVITY (${windowLabel})`,
       "-".repeat(36),
       `New tips received:     ${tips.length}`,
       `Crisis alerts:         ${crisisCount}`,
       `Cluster escalations:   ${clusterEscalationCount}`,
       "",
-      "BREAKDOWN BY TIER (overnight):",
+      "BREAKDOWN BY TIER (shift):",
       `  IMMEDIATE:  ${counts["IMMEDIATE"]}`,
       `  URGENT:     ${counts["URGENT"]}`,
       `  STANDARD:   ${counts["STANDARD"]}`,
@@ -170,7 +170,7 @@ async function sendNightlyDigest(): Promise<void> {
       "DIGEST",
       "SHIFT_CHANGE_DIGEST",
       0,
-      "Review overnight tip activity in the dashboard.",
+      "Review shift tip activity in the dashboard.",
       briefSummary + "\n\n" + emailBody,
     );
 
@@ -193,14 +193,18 @@ export function startDigestScheduler(): void {
 
   const scheduleNext = () => {
     const now  = new Date();
-    const next = new Date(now);
+    const next1 = new Date(now);
+    next1.setHours(6, 0, 0, 0); // 06:00 today
+    const next2 = new Date(now);
+    next2.setHours(18, 0, 0, 0); // 18:00 today
 
-    // Default target: 06:00 today
-    next.setHours(6, 0, 0, 0);
-
-    // If 06:00 today has already passed, schedule for 06:00 tomorrow.
-    if (next.getTime() <= now.getTime()) {
+    let next = next1;
+    if (now.getTime() >= next2.getTime()) {
+      next = new Date(now);
       next.setDate(next.getDate() + 1);
+      next.setHours(6, 0, 0, 0);
+    } else if (now.getTime() >= next1.getTime()) {
+      next = next2;
     }
 
     const ms = next.getTime() - now.getTime();
@@ -210,7 +214,7 @@ export function startDigestScheduler(): void {
 
     digestTimer = setTimeout(async () => {
       await sendNightlyDigest();
-      scheduleNext(); // reschedule for the following day
+      scheduleNext(); // reschedule for the next shift change
     }, ms);
   };
 

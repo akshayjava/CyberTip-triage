@@ -641,8 +641,7 @@ function TipDetailSheet({ tip, onClose, onRefresh, deconflictionSimulated }) {
 
 // ── Queue List ────────────────────────────────────────────────────────────────
 
-function QueueList({ queue, onTapTip, page, setPage, totalCount }) {
-  const [filter, setFilter] = useState('ACTIVE');
+function QueueList({ queue, onTapTip, page, setPage, totalCount, filter, setFilter }) {
   const filters = ['ACTIVE', 'IMMEDIATE', 'URGENT', 'PAUSED', 'ALL'];
 
   const allTips = Object.values(queue).flat();
@@ -764,15 +763,18 @@ function QueueList({ queue, onTapTip, page, setPage, totalCount }) {
 function App() {
   const [queue,       setQueue]       = useState({});
   const [stats,       setStats]       = useState(null);
+  const [crisisTips,  setCrisisTips]  = useState([]);
   const [selectedTip, setSelectedTip] = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [page,        setPage]        = useState(0);
+  const [filter,      setFilter]      = useState('ACTIVE');
   const [totalCount,  setTotalCount]  = useState(0);
   const [deconflictionSimulated, setDeconflictionSimulated] = useState(true);
-  const pollRef  = useRef(null);
-  const pageRef  = useRef(0);
+  const pollRef   = useRef(null);
+  const pageRef   = useRef(0);
+  const filterRef = useRef('ACTIVE');
 
   // Fetch health once to determine if deconfliction is running in stub/simulated mode
   useEffect(() => {
@@ -782,17 +784,20 @@ function App() {
       .catch(() => {}); // default true (simulated) on error — safe default
   }, []);
 
-  const doFetch = useCallback(async (pageIdx) => {
+  const doFetch = useCallback(async (pageIdx, currentFilter) => {
     try {
       const offset = pageIdx * PAGE_SIZE;
-      const [qRes, sRes] = await Promise.all([
-        fetch(`${API}/queue?limit=${PAGE_SIZE}&offset=${offset}`),
+      const tierParam = currentFilter !== 'ALL' && currentFilter !== 'ACTIVE' ? `&tier=${currentFilter}` : '';
+      const [qRes, sRes, cRes] = await Promise.all([
+        fetch(`${API}/queue?limit=${PAGE_SIZE}&offset=${offset}${tierParam}`),
         fetch(`${API}/stats`).then(r => r.json()),
+        fetch(`${API}/crisis`).then(r => r.json())
       ]);
       const total = parseInt(qRes.headers.get('X-Total-Count') ?? '0', 10);
       const data = await qRes.json();
       setQueue(data);
       setStats(sRes);
+      setCrisisTips(cRes.filter(c => c.status !== 'assigned' && c.status !== 'in_investigation'));
       setTotalCount(total);
       setError(null);
       setLastRefresh(new Date());
@@ -809,24 +814,22 @@ function App() {
       const tip = await fetch(`${API}/tips/${selectedTip.tip_id}`).then(r => r.json());
       setSelectedTip(tip);
     } catch {}
-    doFetch(pageRef.current);
+    doFetch(pageRef.current, filterRef.current);
   }, [selectedTip, doFetch]);
 
-  // Re-fetch when page changes
+  // Re-fetch when page or filter changes
   useEffect(() => {
     setLoading(true);
     pageRef.current = page;
-    doFetch(page);
-  }, [page, doFetch]);
+    filterRef.current = filter;
+    doFetch(page, filter);
+  }, [page, filter, doFetch]);
 
   // Polling — uses ref so interval doesn't need recreation
   useEffect(() => {
-    pollRef.current = setInterval(() => doFetch(pageRef.current), 15000);
+    pollRef.current = setInterval(() => doFetch(pageRef.current, filterRef.current), 15000);
     return () => clearInterval(pollRef.current);
   }, [doFetch]);
-
-  const allTips    = Object.values(queue).flat();
-  const crisisTips = allTips.filter(t => t.priority?.victim_crisis_alert);
 
   return (
     <div className="safe-top" style={{height:'100%',display:'flex',flexDirection:'column'}}>
@@ -845,7 +848,7 @@ function App() {
         <div className="flex items-center gap-3">
           {error && <span className="text-xs" style={{color:'var(--red)'}}>{error}</span>}
           <button
-            onClick={() => doFetch(pageRef.current)}
+            onClick={() => doFetch(pageRef.current, filterRef.current)}
             style={{background:'var(--border)',color:'var(--muted)',padding:'6px 12px',borderRadius:6,fontSize:12}}
             className="tap"
           >
@@ -872,6 +875,8 @@ function App() {
           page={page}
           setPage={setPage}
           totalCount={totalCount}
+          filter={filter}
+          setFilter={setFilter}
         />
       )}
 
