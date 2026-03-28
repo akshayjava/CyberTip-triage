@@ -22,6 +22,8 @@ export const DeconflictionMatchSchema = z.object({
   ]),
   coordination_recommended: z.boolean(),
   active_investigation: z.boolean(),
+  /** True when produced by a stub provider — result is simulated, not from real RISSafe/HighWay */
+  simulated_warning: z.boolean().optional(),
 });
 export type DeconflictionMatch = z.infer<typeof DeconflictionMatchSchema>;
 

@@ -10,14 +10,22 @@ import express from "express";
 import request from "supertest";
 import { mountApiRoutes } from "../api/routes.js";
 import { mountSetupRoutes } from "../api/setup_routes.js";
+import { mountIngestionRoutes } from "../ingestion/routes.js";
 
 // ── Test app setup ────────────────────────────────────────────────────────────
 
 function buildTestApp() {
   const app = express();
   app.use(express.json());
+  // Mock session for requireRole middleware used in setup routes
+  app.use((req, res, next) => {
+    // @ts-expect-error - Mocking session
+    req.session = { role: "admin" };
+    next();
+  });
   mountApiRoutes(app);
   mountSetupRoutes(app);
+  mountIngestionRoutes(app);
   return app;
 }
 

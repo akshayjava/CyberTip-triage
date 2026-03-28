@@ -22,6 +22,13 @@ import type { CyberTip, TipFile } from "../models/index.js";
 
 const memStore = new Map<string, CyberTip>();
 
+/**
+ * Secondary index: preservation request_id → tip_id.
+ * Maintained in upsertTip so getTipByPreservationId avoids an O(n) scan
+ * over memStore in dev/test mode.
+ */
+const memPreservationIndex = new Map<string, string>();
+
 function isPostgres(): boolean {
   return process.env["DB_MODE"] === "postgres";
 }
@@ -38,6 +45,14 @@ export interface ListTipsOptions {
   crisis_only?: boolean;
   /** Return tips received at or after this ISO timestamp */
   since?: string;
+  /** Filter by bundled status */
+  is_bundled?: boolean;
+  /** Exclude large body fields (raw_body, normalized_body) for performance */
+  exclude_body?: boolean;
+  /** Exclude file attachments array to prevent over-fetching when files are unneeded */
+  exclude_files?: boolean;
+  /** Only return tips that have cluster_flags > 0 */
+  has_cluster_flags?: boolean;
 }
 
 export interface ListTipsResult {
@@ -55,6 +70,10 @@ export interface ListTipsResult {
 export async function upsertTip(tip: CyberTip): Promise<void> {
   if (!isPostgres()) {
     memStore.set(tip.tip_id, tip);
+    // Keep preservation index up to date for O(1) lookups by request_id
+    for (const pr of tip.preservation_requests) {
+      memPreservationIndex.set(pr.request_id, tip.tip_id);
+    }
     return;
   }
 
@@ -272,6 +291,25 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
   return assembleTip(tipRow.rows[0]!, filesRow.rows, presRow.rows, auditRow.rows);
 }
 
+// ── Read: find tip by preservation request id ─────────────────────────────────
+
+export async function getTipByPreservationId(requestId: string): Promise<CyberTip | null> {
+  if (!isPostgres()) {
+    // O(1) lookup via secondary index maintained by upsertTip
+    const tipId = memPreservationIndex.get(requestId);
+    if (!tipId) return null;
+    return memStore.get(tipId) ?? null;
+  }
+
+  const pool = getPool();
+  const row = await pool.query<{ tip_id: string }>(
+    `SELECT tip_id FROM preservation_requests WHERE request_id = $1 LIMIT 1`,
+    [requestId]
+  );
+  if (row.rows.length === 0) return null;
+  return getTipById(row.rows[0]!.tip_id);
+}
+
 // ── Read: paginated tip list with tier filtering ──────────────────────────────
 
 export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResult> {
@@ -284,8 +322,23 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     if (opts.tier) {
       tips = tips.filter((t) => t.priority?.tier === opts.tier);
     }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
     if (opts.status) {
       tips = tips.filter((t) => t.status === opts.status);
+    }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
+    }
+    if (opts.is_bundled !== undefined) {
+      tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
+    }
+    if (opts.unit) {
+      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
     }
     if (opts.crisis_only) {
       tips = tips.filter(
@@ -310,6 +363,20 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       return (b.priority?.score ?? 0) - (a.priority?.score ?? 0);
     });
 
+    // Handle exclude_body (memory mode)
+    if (opts.exclude_body) {
+      tips = tips.map((t) => ({ ...t, raw_body: "", normalized_body: "" }));
+    }
+
+    // ⚡ Bolt Optimization: Exclude files (memory mode)
+    if (opts.exclude_files) {
+      tips = tips.map((t) => ({ ...t, files: [] }));
+    }
+
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -325,9 +392,24 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     conditions.push(`priority->>'tier' = $${paramIdx++}`);
     params.push(opts.tier);
   }
+  if (opts.unit) {
+    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
+    params.push(opts.unit);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
+  }
   if (opts.status) {
     conditions.push(`status = $${paramIdx++}`);
     params.push(opts.status);
+  }
+  if (opts.unit) {
+    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
+    params.push(opts.unit);
+  }
+  if (opts.is_bundled !== undefined) {
+    conditions.push(`is_bundled = $${paramIdx++}`);
+    params.push(opts.is_bundled);
   }
   if (opts.crisis_only) {
     conditions.push(
@@ -337,6 +419,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.since) {
     conditions.push(`received_at >= $${paramIdx++}`);
     params.push(opts.since);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -348,9 +433,14 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   );
   const total = parseInt(countResult.rows[0]!.count, 10);
 
+  // ⚡ Bolt Optimization: Exclude large body text when not needed
+  const columns = opts.exclude_body
+    ? "tip_id, ncmec_tip_number, ids_case_number, source, received_at, status, is_bundled, bundled_incident_count, ncmec_urgent_flag, reporter, jurisdiction_of_tip, legal_status, extracted, hash_matches, classification, links, priority, '' as raw_body, '' as normalized_body"
+    : "*";
+
   // Data query — sorted by tier priority then score, paginated
   const dataResult = await pool.query<TipRow>(
-    `SELECT * FROM cyber_tips ${where}
+    `SELECT ${columns} FROM cyber_tips ${where}
      ORDER BY
        CASE priority->>'tier'
          WHEN 'IMMEDIATE' THEN 0
@@ -369,7 +459,8 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   // For list view, fetch files inline (one additional query batched)
   const tipIds = dataResult.rows.map((r) => r.tip_id);
   let allFiles: FileRow[] = [];
-  if (tipIds.length > 0) {
+  // ⚡ Bolt Optimization: Skip fetching files if not needed
+  if (!opts.exclude_files && tipIds.length > 0) {
     const filesResult = await pool.query<FileRow>(
       `SELECT * FROM tip_files WHERE tip_id = ANY($1) ORDER BY created_at`,
       [tipIds]
@@ -491,7 +582,7 @@ export async function getTipStats(): Promise<TipStats> {
       }
       const tier = t.priority?.tier;
       if (tier && tier in by_tier) {
-        by_tier[tier]++;
+        by_tier[tier]!++;
       }
     }
 
@@ -550,7 +641,292 @@ export async function getTipStats(): Promise<TipStats> {
   };
 }
 
+export interface NightlyDigestStats {
+  total: number;
+  crisis: number;
+  escalated: number;
+  by_tier: {
+    IMMEDIATE: number;
+    URGENT: number;
+    STANDARD: number;
+    PAUSED: number;
+    MONITOR: number;
+    pending: number;
+  };
+}
+
+export async function getNightlyDigestStats(sinceISO: string): Promise<NightlyDigestStats> {
+  if (!isPostgres()) {
+    const sinceTime = new Date(sinceISO).getTime();
+    const tips = Array.from(memStore.values()).filter(t => new Date(t.received_at).getTime() >= sinceTime);
+
+    const stats: NightlyDigestStats = {
+      total: tips.length,
+      crisis: 0,
+      escalated: 0,
+      by_tier: { IMMEDIATE: 0, URGENT: 0, STANDARD: 0, PAUSED: 0, MONITOR: 0, pending: 0 }
+    };
+
+    for (const tip of tips) {
+      const tier = (tip.priority?.tier ?? "pending") as keyof NightlyDigestStats["by_tier"];
+      if (stats.by_tier[tier] !== undefined) stats.by_tier[tier]++;
+      if (tip.priority?.victim_crisis_alert) stats.crisis++;
+      if ((tip.links?.cluster_flags as any[])?.length && tip.priority?.tier !== "MONITOR") {
+        stats.escalated++;
+      }
+    }
+    return stats;
+  }
+
+  const pool = getPool();
+  const result = await pool.query<{
+    total: string | null;
+    crisis: string | null;
+    escalated: string | null;
+    immediate: string | null;
+    urgent: string | null;
+    standard: string | null;
+    paused: string | null;
+    monitor: string | null;
+    pending: string | null;
+  }>(
+    `SELECT
+       COUNT(*) as total,
+       COUNT(*) FILTER (WHERE priority->>'victim_crisis_alert' = 'true') as crisis,
+       COUNT(*) FILTER (WHERE jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0 AND priority->>'tier' != 'MONITOR') as escalated,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'IMMEDIATE') as immediate,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'URGENT') as urgent,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'STANDARD') as standard,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'PAUSED') as paused,
+       COUNT(*) FILTER (WHERE priority->>'tier' = 'MONITOR') as monitor,
+       COUNT(*) FILTER (WHERE priority->>'tier' IS NULL) as pending
+     FROM cyber_tips
+     WHERE received_at >= $1`,
+    [sinceISO]
+  );
+
+  const row = result.rows[0] ?? {} as Record<string, string>;
+  return {
+    total: parseInt(row.total ?? "0", 10),
+    crisis: parseInt(row.crisis ?? "0", 10),
+    escalated: parseInt(row.escalated ?? "0", 10),
+    by_tier: {
+      IMMEDIATE: parseInt(row.immediate ?? "0", 10),
+      URGENT: parseInt(row.urgent ?? "0", 10),
+      STANDARD: parseInt(row.standard ?? "0", 10),
+      PAUSED: parseInt(row.paused ?? "0", 10),
+      MONITOR: parseInt(row.monitor ?? "0", 10),
+      pending: parseInt(row.pending ?? "0", 10),
+    }
+  };
+}
+
+export async function getBundleStatsData(): Promise<{
+  unique_bundles: number;
+  total_incidents: number;
+  largest_bundle: { tip_id: string; count: number } | null;
+}> {
+  if (!isPostgres()) {
+    const tips = Array.from(memStore.values());
+    const bundles = tips.filter((t) => t.is_bundled === true && t.status !== "duplicate");
+
+    let largest: { tip_id: string; count: number } | null = null;
+    let totalIncidents = 0;
+
+    for (const b of bundles) {
+      const count = b.bundled_incident_count ?? 1;
+      totalIncidents += count;
+      if (!largest || count > largest.count) {
+        largest = { tip_id: b.tip_id, count };
+      }
+    }
+
+    return {
+      unique_bundles: bundles.length,
+      total_incidents: totalIncidents,
+      largest_bundle: largest,
+    };
+  }
+
+  const pool = getPool();
+  // ⚡ Bolt Optimization: Combined 2 concurrent aggregate queries into 1 using CTEs
+  const result = await pool.query<{
+    count: string;
+    total: string | null;
+    max_tip_id: string | null;
+    max_count: string | null;
+  }>(
+    `WITH filtered_tips AS (
+       SELECT tip_id, COALESCE(bundled_incident_count, 1) as count
+       FROM cyber_tips
+       WHERE is_bundled = true AND status != 'duplicate'
+     ),
+     stats AS (
+       SELECT COUNT(*) as count, SUM(count) as total
+       FROM filtered_tips
+     ),
+     largest AS (
+       SELECT tip_id as max_tip_id, count as max_count
+       FROM filtered_tips
+       ORDER BY count DESC
+       LIMIT 1
+     )
+     SELECT stats.count, stats.total, largest.max_tip_id, largest.max_count
+     FROM stats LEFT JOIN largest ON true`
+  );
+
+  const row = result.rows[0];
+  const unique_bundles = parseInt(row?.count ?? "0", 10);
+  const total_incidents = parseInt(row?.total ?? "0", 10);
+  const largest_bundle = row?.max_tip_id
+    ? { tip_id: row.max_tip_id, count: parseInt(row.max_count ?? "0", 10) }
+    : null;
+
+  return { unique_bundles, total_incidents, largest_bundle };
+}
+
+
+// ── Read: Duplicate tips for a bundle canonical ID ────────────────────────────
+
+export async function getDuplicatesForBundle(
+  canonicalId: string
+): Promise<Array<{ tip_id: string; received_at: string; source: string }>> {
+  if (!isPostgres()) {
+    const duplicates = Array.from(memStore.values()).filter(
+      (t) => t.status === "duplicate" && t.links?.duplicate_of === canonicalId
+    );
+    return duplicates.map((d) => ({
+      tip_id: d.tip_id,
+      received_at: d.received_at instanceof Date ? d.received_at.toISOString() : String(d.received_at),
+      source: d.source,
+    }));
+  }
+
+  const pool = getPool();
+  const result = await pool.query<{ tip_id: string, received_at: Date | string, source: string }>(
+    `SELECT tip_id, received_at, source
+     FROM cyber_tips
+     WHERE status = 'duplicate' AND links->>'duplicate_of' = $1
+     ORDER BY received_at DESC`,
+    [canonicalId]
+  );
+
+  return result.rows.map((r) => ({
+    tip_id: r.tip_id,
+    received_at: r.received_at instanceof Date ? r.received_at.toISOString() : String(r.received_at),
+    source: r.source,
+  }));
+}
+
+// ── Read: Hash match statistics over a period ─────────────────────────────────
+
+export async function getHashMatchStats(sinceISO: string): Promise<{
+  tips_analyzed: number;
+  files_checked: number;
+  ncmec_matches: number;
+  project_vic_matches: number;
+  iwf_matches: number;
+  interpol_icse_matches: number;
+  aig_csam_suspected: number;
+  any_db_match_tips: number;
+}> {
+  if (!isPostgres()) {
+    const sinceTime = new Date(sinceISO).getTime();
+    const recent = Array.from(memStore.values()).filter(t => new Date(t.received_at).getTime() >= sinceTime);
+
+    let ncmec_matches = 0;
+    let project_vic_matches = 0;
+    let iwf_matches = 0;
+    let interpol_icse_matches = 0;
+    let aig_csam_suspected = 0;
+    let files_checked = 0;
+    let any_db_match_tips = 0;
+
+    for (const tip of recent) {
+      let tipHasMatch = false;
+      for (const f of tip.files ?? []) {
+        files_checked++;
+        if (f.ncmec_hash_match)    ncmec_matches++;
+        if (f.project_vic_match)   project_vic_matches++;
+        if (f.iwf_match)           iwf_matches++;
+        if (f.interpol_icse_match) interpol_icse_matches++;
+        if (f.aig_csam_suspected)  aig_csam_suspected++;
+        if (f.ncmec_hash_match || f.project_vic_match || f.iwf_match || f.interpol_icse_match) {
+          tipHasMatch = true;
+        }
+      }
+      if (tipHasMatch) any_db_match_tips++;
+    }
+
+    return {
+      tips_analyzed: recent.length,
+      files_checked,
+      ncmec_matches: ncmec_matches,
+      project_vic_matches: project_vic_matches,
+      iwf_matches: iwf_matches,
+      interpol_icse_matches: interpol_icse_matches,
+      aig_csam_suspected: aig_csam_suspected,
+      any_db_match_tips: any_db_match_tips,
+    };
+  }
+
+  const pool = getPool();
+  // ⚡ Bolt Optimization: Use CTE to compute hash stats in a single database round-trip
+  const result = await pool.query<{
+    tips_analyzed: string;
+    files_checked: string;
+    ncmec_matches: string;
+    project_vic_matches: string;
+    iwf_matches: string;
+    interpol_icse_matches: string;
+    aig_csam_suspected: string;
+    any_db_match_tips: string;
+  }>(`
+    WITH recent_tips AS (
+      SELECT tip_id FROM cyber_tips WHERE received_at >= $1
+    ),
+    tip_stats AS (
+      SELECT COUNT(*) as tips_analyzed FROM recent_tips
+    ),
+    file_stats AS (
+      SELECT
+        COUNT(*) as files_checked,
+        COUNT(*) FILTER (WHERE ncmec_hash_match = true) as ncmec_matches,
+        COUNT(*) FILTER (WHERE project_vic_match = true) as project_vic_matches,
+        COUNT(*) FILTER (WHERE iwf_match = true) as iwf_matches,
+        COUNT(*) FILTER (WHERE interpol_icse_match = true) as interpol_icse_matches,
+        COUNT(*) FILTER (WHERE aig_csam_suspected = true) as aig_csam_suspected,
+        COUNT(DISTINCT tip_id) FILTER (WHERE ncmec_hash_match = true OR project_vic_match = true OR iwf_match = true OR interpol_icse_match = true) as any_db_match_tips
+      FROM tip_files
+      WHERE tip_id IN (SELECT tip_id FROM recent_tips)
+    )
+    SELECT
+      tip_stats.tips_analyzed,
+      file_stats.files_checked,
+      file_stats.ncmec_matches,
+      file_stats.project_vic_matches,
+      file_stats.iwf_matches,
+      file_stats.interpol_icse_matches,
+      file_stats.aig_csam_suspected,
+      file_stats.any_db_match_tips
+    FROM tip_stats CROSS JOIN file_stats
+  `, [sinceISO]);
+
+  const r = result.rows[0];
+  return {
+    tips_analyzed: parseInt(r?.tips_analyzed ?? "0", 10),
+    files_checked: parseInt(r?.files_checked ?? "0", 10),
+    ncmec_matches: parseInt(r?.ncmec_matches ?? "0", 10),
+    project_vic_matches: parseInt(r?.project_vic_matches ?? "0", 10),
+    iwf_matches: parseInt(r?.iwf_matches ?? "0", 10),
+    interpol_icse_matches: parseInt(r?.interpol_icse_matches ?? "0", 10),
+    aig_csam_suspected: parseInt(r?.aig_csam_suspected ?? "0", 10),
+    any_db_match_tips: parseInt(r?.any_db_match_tips ?? "0", 10),
+  };
+}
+
 // ── Internal assembly helpers ─────────────────────────────────────────────────
+
 
 interface TipRow {
   tip_id: string;

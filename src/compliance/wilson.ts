@@ -30,7 +30,7 @@ export function computeWarrantRequired(
   circuit?: FederalCircuit | string | null
 ): boolean {
   // If circuit info is available, delegate to Tier 4.1 logic
-  if (circuit && typeof circuit === "string" && /^\d+(st|nd|rd|th)|DC$/.test(circuit)) {
+  if (circuit && typeof circuit === "string" && /^(\d+(st|nd|rd|th)|DC)$/.test(circuit)) {
     // Basic validation to match FederalCircuit type (simplified)
     const result = requiresWarrantByCircuit({
       circuit: circuit as FederalCircuit,

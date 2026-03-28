@@ -10,6 +10,7 @@
  *   openai     — GPT-4o / GPT-4o-mini
  *   gemini     — Gemini 1.5 Pro / Flash (via OpenAI-compatible endpoint)
  *   local      — Any OpenAI-compatible server (Ollama, LM Studio, vLLM, etc.)
+ *   gemma      — Google Gemma models via local Ollama/vLLM (offline/air-gap mode)
  *
  * Model tiers map to provider-specific models:
  *   high   — Opus / GPT-4o / Gemini 1.5 Pro   — used by: Legal Gate, Classifier, Priority
@@ -100,4 +101,4 @@ export interface LLMProvider {
 
 // ── Provider names ────────────────────────────────────────────────────────────
 
-export type ProviderName = "anthropic" | "openai" | "gemini" | "local";
+export type ProviderName = "anthropic" | "openai" | "gemini" | "local" | "gemma";

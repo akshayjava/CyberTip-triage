@@ -13,7 +13,8 @@ import type { Application, Request, Response } from "express";
 import { writeFile, access, readdir, stat } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { createHash } from "crypto";
+import { randomBytes } from "crypto";
+import { requireRole } from "../auth/middleware.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../../");
@@ -58,7 +59,7 @@ export function mountSetupRoutes(app: Application): void {
   });
 
   // ── Setup wizard — save configuration ────────────────────────────────────
-  app.post("/api/setup/save", async (req: Request, res: Response) => {
+  app.post("/api/setup/save", requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const config = req.body as SetupConfig;
       const validation = validateSetupConfig(config);
@@ -155,6 +156,9 @@ async function getDetailedHealth(): Promise<Record<string, unknown>> {
   health["project_vic"] = !!process.env["PROJECT_VIC_API_KEY"];
   health["iwf"] = !!process.env["IWF_API_KEY"];
   health["deconfliction"] = !!process.env["RISSAFE_API_KEY"];
+  health["deconfliction_simulated"] =
+    process.env["TOOL_MODE"] !== "real" &&
+    !(process.env["DECONFLICTION_API_URL"] && process.env["DECONFLICTION_API_KEY"]);
   health["interpol"] = !!process.env["INTERPOL_ICSE_KEY"];
 
   // Stub directory
@@ -198,6 +202,8 @@ interface SetupConfig {
   vicKey?: string;
   iwfKey?: string;
   deconKey?: string;
+  /** Forensics platform identifiers enabled at this agency (e.g. ["GRIFFEYE","FTK"]). GENERIC always included. */
+  forensicsTools?: string[];
 }
 
 interface ValidationResult {
@@ -205,13 +211,45 @@ interface ValidationResult {
   error?: string;
 }
 
+const VALID_FORENSICS_PLATFORMS = ["GRIFFEYE", "AXIOM", "FTK", "CELLEBRITE", "ENCASE", "GENERIC"] as const;
+
 function validateSetupConfig(config: SetupConfig): ValidationResult {
+  // Helper to validate no newlines or double quotes
+  const isSafe = (val: string | undefined): boolean => {
+    if (!val) return true;
+    return !/[\r\n"]/.test(val);
+  };
+
   if (!config.agencyName?.trim()) {
     return { valid: false, error: "Agency name is required" };
   }
+  if (!isSafe(config.agencyName)) {
+    return { valid: false, error: "Agency name cannot contain newlines or double quotes" };
+  }
+
   if (!config.agencyState?.trim()) {
     return { valid: false, error: "State is required" };
   }
+  if (!isSafe(config.agencyState)) {
+    return { valid: false, error: "State cannot contain newlines or double quotes" };
+  }
+
+  if (!isSafe(config.contactEmail)) return { valid: false, error: "Contact email cannot contain newlines or double quotes" };
+  if (!isSafe(config.apiKey)) return { valid: false, error: "API Key cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.idsEmail)) return { valid: false, error: "IDS Email cannot contain newlines or double quotes" };
+  if (!isSafe(config.idsPassword)) return { valid: false, error: "IDS Password cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.ncmecKey)) return { valid: false, error: "NCMEC Key cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.emailHost)) return { valid: false, error: "Email Host cannot contain newlines or double quotes" };
+  if (!isSafe(config.emailUser)) return { valid: false, error: "Email User cannot contain newlines or double quotes" };
+  if (!isSafe(config.emailPass)) return { valid: false, error: "Email Password cannot contain newlines or double quotes" };
+
+  if (!isSafe(config.vicKey)) return { valid: false, error: "VIC Key cannot contain newlines or double quotes" };
+  if (!isSafe(config.iwfKey)) return { valid: false, error: "IWF Key cannot contain newlines or double quotes" };
+  if (!isSafe(config.deconKey)) return { valid: false, error: "Deconfliction Key cannot contain newlines or double quotes" };
+
   if (!["docker", "node"].includes(config.mode)) {
     return { valid: false, error: "Mode must be docker or node" };
   }
@@ -219,6 +257,21 @@ function validateSetupConfig(config: SetupConfig): ValidationResult {
   if (isNaN(port) || port < 1024 || port > 65535) {
     return { valid: false, error: "Port must be between 1024 and 65535" };
   }
+
+  if (config.forensicsTools !== undefined) {
+    if (!Array.isArray(config.forensicsTools)) {
+      return { valid: false, error: "forensicsTools must be an array" };
+    }
+    for (const tool of config.forensicsTools) {
+      if (typeof tool !== "string") {
+        return { valid: false, error: "forensicsTools must be an array of strings" };
+      }
+      if (!(VALID_FORENSICS_PLATFORMS as readonly string[]).includes(tool.toUpperCase())) {
+        return { valid: false, error: `Invalid forensics platform: "${tool}". Must be one of: ${VALID_FORENSICS_PLATFORMS.join(", ")}` };
+      }
+    }
+  }
+
   return { valid: true };
 }
 
@@ -228,6 +281,7 @@ function generateEnvFile(c: SetupConfig): string {
   const secret = generateSecret();
   const dbPassword = generateSecret(20);
   const redisPassword = generateSecret(20);
+  const jwtSecret = generateSecret(64);
 
   const dbUrl =
     c.dbUrl ||
@@ -249,6 +303,8 @@ CONTACT_EMAIL="${c.contactEmail || ""}"
 PORT=${c.port || 3000}
 NODE_ENV=production
 CORS_ORIGIN=http://localhost:${c.port || 3000}
+AUTH_ENABLED=true
+JWT_SECRET=${jwtSecret}
 
 # ── Anthropic AI ──────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY=${c.apiKey || "REPLACE_WITH_KEY"}
@@ -307,14 +363,32 @@ ${c.vicKey ? `PROJECT_VIC_API_KEY=${c.vicKey}` : `# PROJECT_VIC_API_KEY=`}
 ${c.iwfKey ? `IWF_API_KEY=${c.iwfKey}` : `# IWF_API_KEY=`}
 ${c.deconKey ? `RISSAFE_API_KEY=${c.deconKey}` : `# RISSAFE_API_KEY=`}
 # INTERPOL_ICSE_KEY=
+
+# ── Forensics Tool Handoff ─────────────────────────────────────────────────────
+# Platforms licensed and deployed at this agency. Only these appear in the
+# Forensics Handoff UI. GENERIC is always available as a fallback.
+FORENSICS_ENABLED_PLATFORMS=${buildForensicsPlatformsValue(c.forensicsTools)}
 `;
 }
 
+function buildForensicsPlatformsValue(tools?: string[]): string {
+  if (!Array.isArray(tools)) {
+    return "GENERIC";
+  }
+  const selected = tools
+    .map((t) => t.toUpperCase())
+    .filter((t) => (VALID_FORENSICS_PLATFORMS as readonly string[]).includes(t));
+
+  // GENERIC is always included
+  if (!selected.includes("GENERIC")) selected.push("GENERIC");
+  return selected.join(",");
+}
+
 function generateSecret(length = 32): string {
-  return createHash("sha256")
-    .update(Math.random().toString() + Date.now().toString())
-    .digest("hex")
-    .slice(0, length);
+  // Use crypto.randomBytes for secure random generation
+  // Since 1 byte = 2 hex chars, we generate enough bytes
+  const bytes = randomBytes(Math.ceil(length / 2));
+  return bytes.toString("hex").slice(0, length);
 }
 
 // ── Test data setup ───────────────────────────────────────────────────────────

@@ -47,6 +47,7 @@ const { mountSetupRoutes } = await import("../api/setup_routes.js");
 
 function buildApp(): Application {
   const app = express();
+  app.disable("x-powered-by");
   app.use(express.json({ limit: "10mb" }));
   mountApiRoutes(app);
   mountIngestionRoutes(app);

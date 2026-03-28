@@ -2,6 +2,7 @@
 // Every agent and tool imports from here. Never import from individual model
 // files outside of this package.
 
+export * from "./agency.js";
 export * from "./audit.js";
 export * from "./classification.js";
 export * from "./entities.js";
