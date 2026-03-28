@@ -297,26 +297,45 @@ async function searchCaseDatabaseReal(
     };
   }
 
-  // Unknown entity type: fall back to ILIKE search across the entire extracted text
+  // Unknown entity type: fall back to trigram/full-text search across the entire extracted text
+  let queryText: string;
+  let queryParams: unknown[];
+
+  if (fuzzy) {
+    queryText = `
+      SELECT
+        ct.tip_id,
+        ct.status                              AS tip_status,
+        ct.received_at,
+        ct.classification->>'offense_category' AS offense_category,
+        ct.extracted->'subjects'->0->>'name'   AS subject_name
+      FROM cyber_tips ct
+      WHERE ct.extracted::text % $1
+        AND ct.received_at > NOW() - $2::interval
+      ORDER BY ct.received_at DESC`;
+    queryParams = [entityValue, sinceInterval];
+  } else {
+    queryText = `
+      SELECT
+        ct.tip_id,
+        ct.status                              AS tip_status,
+        ct.received_at,
+        ct.classification->>'offense_category' AS offense_category,
+        ct.extracted->'subjects'->0->>'name'   AS subject_name
+      FROM cyber_tips ct
+      WHERE ct.extracted::text @@ plainto_tsquery($1)
+        AND ct.received_at > NOW() - $2::interval
+      ORDER BY ct.received_at DESC`;
+    queryParams = [entityValue, sinceInterval];
+  }
+
   const result = await pool.query<{
     tip_id: string;
     tip_status: string;
     received_at: Date;
     offense_category: string | null;
     subject_name: string | null;
-  }>(
-    `SELECT
-       ct.tip_id,
-       ct.status                              AS tip_status,
-       ct.received_at,
-       ct.classification->>'offense_category' AS offense_category,
-       ct.extracted->'subjects'->0->>'name'   AS subject_name
-     FROM cyber_tips ct
-     WHERE ct.extracted::text ILIKE $1
-       AND ct.received_at > NOW() - $2::interval
-     ORDER BY ct.received_at DESC`,
-    [`%${entityValue}%`, sinceInterval]
-  );
+  }>(queryText, queryParams);
 
   const results: CaseSearchResult[] = result.rows.map((row) => ({
     tip_id: row.tip_id,
