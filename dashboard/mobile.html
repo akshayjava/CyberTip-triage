@@ -90,6 +90,8 @@ const API = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : `${window.location.protocol}//${window.location.hostname}:3000/api`;
 
+const PAGE_SIZE = 25;
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 const ago = (iso) => {
@@ -158,7 +160,7 @@ function StatsRow({ queue }) {
 
 // ── Tip Card (mobile optimized) ───────────────────────────────────────────────
 
-function TipCard({ tip, onTap }) {
+function TipCard({ tip, onTap, deconflictionSimulated }) {
   const tier  = tip.priority?.tier ?? 'pending';
   const score = tip.priority?.score ?? 0;
   const cat   = tip.classification?.offense_category?.replace(/_/g,' ') ?? 'Unclassified';
@@ -167,6 +169,7 @@ function TipCard({ tip, onTap }) {
   const hasDecon   = tip.links?.deconfliction_matches?.some(m => m.active_investigation);
   const hasAIG     = tip.classification?.aig_csam_flag;
   const blockedFiles = (tip.files ?? []).filter(f => f.file_access_blocked).length;
+  const deconSimulated = deconflictionSimulated || tip.links?.deconfliction_matches?.some(m => m.simulated_warning);
 
   return (
     <div
@@ -183,6 +186,7 @@ function TipCard({ tip, onTap }) {
             </span>
             {hasCrisis && <span title="Crisis alert">🚨</span>}
             {hasDecon  && <span title="Deconfliction" style={{color:'var(--purple)'}}>⚠</span>}
+            {deconSimulated && <span title="Deconfliction result is simulated — verify manually" style={{background:'#78350f',color:'#fde68a',fontSize:'9px',fontWeight:'bold',padding:'1px 4px',borderRadius:'3px',border:'1px solid #d97706'}}>⚠SIM</span>}
             {hasAIG    && <span style={{color:'var(--yellow)',fontSize:'10px',fontWeight:'bold'}}>AIG</span>}
             <span className="font-mono text-sm text-gray-300 truncate">
               {tip.ncmec_tip_number ?? tip.tip_id.slice(0,8).toUpperCase()}
@@ -231,7 +235,7 @@ function TipCard({ tip, onTap }) {
 
 // ── Tip Detail Sheet (slides up from bottom) ──────────────────────────────────
 
-function TipDetailSheet({ tip, onClose, onRefresh }) {
+function TipDetailSheet({ tip, onClose, onRefresh, deconflictionSimulated }) {
   const [actionLoading, setActionLoading] = useState('');
   const [tab, setTab] = useState('info');
 
@@ -242,6 +246,7 @@ function TipDetailSheet({ tip, onClose, onRefresh }) {
   const e     = tip.extracted;
   const blockedFiles = (tip.files ?? []).filter(f => f.file_access_blocked);
   const hasDecon = (tip.links?.deconfliction_matches ?? []).filter(m => m.active_investigation);
+  const deconSimulated = deconflictionSimulated || (tip.links?.deconfliction_matches ?? []).some(m => m.simulated_warning);
 
   const assignSelf = async () => {
     setActionLoading('assign');
@@ -338,6 +343,14 @@ function TipDetailSheet({ tip, onClose, onRefresh }) {
           {p?.victim_crisis_alert && (
             <div className="crisis-anim rounded p-2 mt-2 text-xs text-red-200">
               🚨 <strong>VICTIM CRISIS:</strong> {p.victim_crisis_alert_text}
+            </div>
+          )}
+
+          {/* Deconfliction simulated warning */}
+          {deconSimulated && (
+            <div className="rounded p-2 mt-2 text-xs font-bold"
+                 style={{background:'#78350f',color:'#fde68a',border:'1px solid #d97706'}}>
+              ⚠ DECONFLICTION SIMULATED — VERIFY MANUALLY: Results are from a stub provider, not a real RISSafe/HighWay database. Check manually before acting.
             </div>
           )}
 
@@ -628,26 +641,38 @@ function TipDetailSheet({ tip, onClose, onRefresh }) {
 
 // ── Queue List ────────────────────────────────────────────────────────────────
 
-function QueueList({ queue, onTapTip }) {
+function QueueList({ queue, onTapTip, page, setPage, totalCount }) {
   const [filter, setFilter] = useState('ACTIVE');
   const filters = ['ACTIVE', 'IMMEDIATE', 'URGENT', 'PAUSED', 'ALL'];
 
   const allTips = Object.values(queue).flat();
-  const visibleTips = (() => {
-    if (filter === 'ACTIVE') return allTips.filter(t => ['IMMEDIATE','URGENT','PAUSED'].includes(t.priority?.tier));
-    if (filter === 'ALL')    return allTips;
-    return queue[filter] ?? [];
-  })().sort((a, b) => {
+
+  // Always sort so IMMEDIATE/URGENT appear first within the current page
+  const sortedTips = [...allTips].sort((a, b) => {
     const ai = tierOrder.indexOf(a.priority?.tier ?? 'pending');
     const bi = tierOrder.indexOf(b.priority?.tier ?? 'pending');
     if (ai !== bi) return ai - bi;
     return (b.priority?.score ?? 0) - (a.priority?.score ?? 0);
   });
 
+  const visibleTips = (() => {
+    if (filter === 'ACTIVE') return sortedTips.filter(t => ['IMMEDIATE','URGENT','PAUSED'].includes(t.priority?.tier));
+    if (filter === 'ALL')    return sortedTips;
+    return sortedTips.filter(t => (t.priority?.tier ?? 'pending') === filter);
+  })();
+
   const countFor = (f) => {
     if (f === 'ACTIVE') return allTips.filter(t => ['IMMEDIATE','URGENT','PAUSED'].includes(t.priority?.tier)).length;
     if (f === 'ALL')    return allTips.length;
-    return queue[f]?.length ?? 0;
+    return allTips.filter(t => (t.priority?.tier ?? 'pending') === f).length;
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const showPagination = totalCount > PAGE_SIZE;
+
+  const handleFilterChange = (f) => {
+    setFilter(f);
+    setPage(0);
   };
 
   return (
@@ -663,7 +688,7 @@ function QueueList({ queue, onTapTip }) {
               color: filter === f ? '#60a5fa' : 'var(--muted)',
               justifyContent: 'center',
             }}
-            onClick={() => setFilter(f)}
+            onClick={() => handleFilterChange(f)}
           >
             {f} ({countFor(f)})
           </button>
@@ -671,17 +696,65 @@ function QueueList({ queue, onTapTip }) {
       </div>
 
       {/* Tip list */}
-      <div style={{flex:1,overflowY:'auto',padding:'12px 12px 80px'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'12px 12px 4px'}}>
         {visibleTips.length === 0 ? (
           <div className="text-center py-8" style={{color:'var(--dim)'}}>
             {filter === 'ACTIVE' ? '✓ No IMMEDIATE or URGENT tips' : `No ${filter} tips`}
           </div>
         ) : (
           visibleTips.map(tip => (
-            <TipCard key={tip.tip_id} tip={tip} onTap={onTapTip} />
+            <TipCard key={tip.tip_id} tip={tip} onTap={onTapTip} deconflictionSimulated={deconflictionSimulated} />
           ))
         )}
       </div>
+
+      {/* Pagination controls */}
+      {showPagination && (
+        <div className="safe-bottom"
+             style={{
+               borderTop: '1px solid var(--border)',
+               padding: '8px 16px',
+               display: 'flex',
+               alignItems: 'center',
+               justifyContent: 'space-between',
+               background: 'var(--surface)',
+             }}>
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="tap"
+            style={{
+              background: 'var(--border)',
+              color: page === 0 ? 'var(--dim)' : 'var(--text)',
+              padding: '6px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              opacity: page === 0 ? 0.4 : 1,
+              cursor: page === 0 ? 'not-allowed' : 'pointer',
+              minHeight: 36,
+            }}
+          >← Prev</button>
+          <span style={{color:'var(--muted)',fontSize:12}}>
+            Page {page + 1} / {totalPages}
+            <span style={{color:'var(--dim)',marginLeft:4}}>({totalCount} total)</span>
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+            className="tap"
+            style={{
+              background: 'var(--border)',
+              color: page >= totalPages - 1 ? 'var(--dim)' : 'var(--text)',
+              padding: '6px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              opacity: page >= totalPages - 1 ? 0.4 : 1,
+              cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer',
+              minHeight: 36,
+            }}
+          >Next →</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -695,16 +768,32 @@ function App() {
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const pollRef = useRef(null);
+  const [page,        setPage]        = useState(0);
+  const [totalCount,  setTotalCount]  = useState(0);
+  const [deconflictionSimulated, setDeconflictionSimulated] = useState(true);
+  const pollRef  = useRef(null);
+  const pageRef  = useRef(0);
 
-  const fetchData = useCallback(async () => {
+  // Fetch health once to determine if deconfliction is running in stub/simulated mode
+  useEffect(() => {
+    fetch('/health/detailed')
+      .then(r => r.ok ? r.json() : null)
+      .then(h => { if (h) setDeconflictionSimulated(h.deconfliction_simulated !== false); })
+      .catch(() => {}); // default true (simulated) on error — safe default
+  }, []);
+
+  const doFetch = useCallback(async (pageIdx) => {
     try {
+      const offset = pageIdx * PAGE_SIZE;
       const [qRes, sRes] = await Promise.all([
-        fetch(`${API}/queue`).then(r => r.json()),
+        fetch(`${API}/queue?limit=${PAGE_SIZE}&offset=${offset}`),
         fetch(`${API}/stats`).then(r => r.json()),
       ]);
-      setQueue(qRes);
+      const total = parseInt(qRes.headers.get('X-Total-Count') ?? '0', 10);
+      const data = await qRes.json();
+      setQueue(data);
       setStats(sRes);
+      setTotalCount(total);
       setError(null);
       setLastRefresh(new Date());
     } catch (err) {
@@ -720,14 +809,21 @@ function App() {
       const tip = await fetch(`${API}/tips/${selectedTip.tip_id}`).then(r => r.json());
       setSelectedTip(tip);
     } catch {}
-    fetchData();
-  }, [selectedTip, fetchData]);
+    doFetch(pageRef.current);
+  }, [selectedTip, doFetch]);
 
+  // Re-fetch when page changes
   useEffect(() => {
-    fetchData();
-    pollRef.current = setInterval(fetchData, 15000);
+    setLoading(true);
+    pageRef.current = page;
+    doFetch(page);
+  }, [page, doFetch]);
+
+  // Polling — uses ref so interval doesn't need recreation
+  useEffect(() => {
+    pollRef.current = setInterval(() => doFetch(pageRef.current), 15000);
     return () => clearInterval(pollRef.current);
-  }, [fetchData]);
+  }, [doFetch]);
 
   const allTips    = Object.values(queue).flat();
   const crisisTips = allTips.filter(t => t.priority?.victim_crisis_alert);
@@ -749,7 +845,7 @@ function App() {
         <div className="flex items-center gap-3">
           {error && <span className="text-xs" style={{color:'var(--red)'}}>{error}</span>}
           <button
-            onClick={fetchData}
+            onClick={() => doFetch(pageRef.current)}
             style={{background:'var(--border)',color:'var(--muted)',padding:'6px 12px',borderRadius:6,fontSize:12}}
             className="tap"
           >
@@ -770,7 +866,13 @@ function App() {
           <div>Loading tips...</div>
         </div>
       ) : (
-        <QueueList queue={queue} onTapTip={setSelectedTip} />
+        <QueueList
+          queue={queue}
+          onTapTip={setSelectedTip}
+          page={page}
+          setPage={setPage}
+          totalCount={totalCount}
+        />
       )}
 
       {/* Bottom nav */}
@@ -798,6 +900,7 @@ function App() {
           tip={selectedTip}
           onClose={() => setSelectedTip(null)}
           onRefresh={refreshTip}
+          deconflictionSimulated={deconflictionSimulated}
         />
       )}
     </div>

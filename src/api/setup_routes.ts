@@ -156,6 +156,9 @@ async function getDetailedHealth(): Promise<Record<string, unknown>> {
   health["project_vic"] = !!process.env["PROJECT_VIC_API_KEY"];
   health["iwf"] = !!process.env["IWF_API_KEY"];
   health["deconfliction"] = !!process.env["RISSAFE_API_KEY"];
+  health["deconfliction_simulated"] =
+    process.env["TOOL_MODE"] !== "real" &&
+    !(process.env["DECONFLICTION_API_URL"] && process.env["DECONFLICTION_API_KEY"]);
   health["interpol"] = !!process.env["INTERPOL_ICSE_KEY"];
 
   // Stub directory
