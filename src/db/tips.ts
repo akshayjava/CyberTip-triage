@@ -51,6 +51,8 @@ export interface ListTipsOptions {
   exclude_body?: boolean;
   /** Exclude file attachments array to prevent over-fetching when files are unneeded */
   exclude_files?: boolean;
+  /** Only return tips that have cluster_flags > 0 */
+  has_cluster_flags?: boolean;
 }
 
 export interface ListTipsResult {
@@ -362,6 +364,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       tips = tips.map((t) => ({ ...t, files: [] }));
     }
 
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -397,6 +403,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.since) {
     conditions.push(`received_at >= $${paramIdx++}`);
     params.push(opts.since);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
