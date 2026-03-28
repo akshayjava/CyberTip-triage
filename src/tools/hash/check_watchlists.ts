@@ -178,11 +178,6 @@ async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
     );
   }
 
-  // Load certificates into cache if not already present
-  if (!certPromise) certPromise = readFile(certPath);
-  if (!keyPromise)  keyPromise  = readFile(keyPath);
-
-  const [cert, key] = await Promise.all([certPromise, keyPromise]);
   // mTLS requires Node's https module with client certs
   // Optimized: Use async read with caching to avoid event loop blocking
   const [cert, key] = await Promise.all([
