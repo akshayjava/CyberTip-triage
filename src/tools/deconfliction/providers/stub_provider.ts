@@ -22,6 +22,7 @@ export class StubDeconflictionProvider implements DeconflictionProvider {
         notes:
           "Active investigation opened 30 days ago. Do NOT contact subject or issue " +
           "preservation requests without coordinating with Det. Smith first.",
+        simulated_warning: true,
       };
     }
 
@@ -29,6 +30,7 @@ export class StubDeconflictionProvider implements DeconflictionProvider {
       match_found: false,
       active_investigation: false,
       coordination_recommended: false,
+      simulated_warning: true,
     };
   }
 }

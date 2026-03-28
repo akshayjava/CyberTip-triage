@@ -31,6 +31,19 @@ function getProvider(): DeconflictionProvider {
   return new StubDeconflictionProvider();
 }
 
+/**
+ * !! DECONFLICTION SIMULATED — VERIFY MANUALLY !!
+ *
+ * When TOOL_MODE is not "real" (or DECONFLICTION_API_URL / DECONFLICTION_API_KEY
+ * are not configured), this function uses a stub provider that only flags
+ * conflicts for known test values ("deconflict_match", "stub_known_subject").
+ *
+ * All other identifiers — including real subjects — will return match_found=false.
+ * An investigator MUST manually verify against RISSafe / HighWay before acting
+ * on any deconfliction result produced in stub mode.
+ *
+ * Results produced by the stub will have simulated_warning=true.
+ */
 export async function checkDeconfliction(
   identifierType: string,
   value: string,

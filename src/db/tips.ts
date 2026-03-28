@@ -22,6 +22,13 @@ import type { CyberTip, TipFile } from "../models/index.js";
 
 const memStore = new Map<string, CyberTip>();
 
+/**
+ * Secondary index: preservation request_id → tip_id.
+ * Maintained in upsertTip so getTipByPreservationId avoids an O(n) scan
+ * over memStore in dev/test mode.
+ */
+const memPreservationIndex = new Map<string, string>();
+
 function isPostgres(): boolean {
   return process.env["DB_MODE"] === "postgres";
 }
@@ -44,6 +51,8 @@ export interface ListTipsOptions {
   exclude_body?: boolean;
   /** Exclude file attachments array to prevent over-fetching when files are unneeded */
   exclude_files?: boolean;
+  /** Only return tips that have cluster_flags > 0 */
+  has_cluster_flags?: boolean;
 }
 
 export interface ListTipsResult {
@@ -61,6 +70,10 @@ export interface ListTipsResult {
 export async function upsertTip(tip: CyberTip): Promise<void> {
   if (!isPostgres()) {
     memStore.set(tip.tip_id, tip);
+    // Keep preservation index up to date for O(1) lookups by request_id
+    for (const pr of tip.preservation_requests) {
+      memPreservationIndex.set(pr.request_id, tip.tip_id);
+    }
     return;
   }
 
@@ -282,12 +295,10 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
 
 export async function getTipByPreservationId(requestId: string): Promise<CyberTip | null> {
   if (!isPostgres()) {
-    for (const tip of memStore.values()) {
-      if (tip.preservation_requests?.some((pr: any) => pr.request_id === requestId)) {
-        return tip;
-      }
-    }
-    return null;
+    // O(1) lookup via secondary index maintained by upsertTip
+    const tipId = memPreservationIndex.get(requestId);
+    if (!tipId) return null;
+    return memStore.get(tipId) ?? null;
   }
 
   const pool = getPool();
@@ -353,6 +364,10 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
       tips = tips.map((t) => ({ ...t, files: [] }));
     }
 
+    if (opts.has_cluster_flags) {
+      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
+    }
+
     const total = tips.length;
     return { tips: tips.slice(offset, offset + limit), total };
   }
@@ -388,6 +403,9 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.since) {
     conditions.push(`received_at >= $${paramIdx++}`);
     params.push(opts.since);
+  }
+  if (opts.has_cluster_flags) {
+    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

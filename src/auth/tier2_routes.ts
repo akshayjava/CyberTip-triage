@@ -40,7 +40,7 @@ import type { Application, Request, Response } from "express";
 // Tier 2.1
 import { generatePreservationLetter, type LetterInput } from "../tools/preservation/letter_generator.js";
 import { generatePreservationLetterPDF, type AgencyInfo } from "../tools/preservation/letter_pdf.js";
-import { issuePreservationRequest, getTipById } from "../db/tips.js";
+import { issuePreservationRequest, getTipById, getTipByPreservationId } from "../db/tips.js";
 
 // Tier 2.2
 import {
@@ -203,9 +203,8 @@ async function handleDownloadPreservationPDF(req: Request, res: Response): Promi
   const requestId = req.params["id"] ?? "";
   const session   = req.session;
 
-  // Find the tip containing this preservation request
-  const { getTipByPreservationId } = await import("../db/tips.js");
-  const tip          = await getTipByPreservationId(requestId);
+  // Find the tip containing this preservation request via direct lookup
+  const tip = await getTipByPreservationId(requestId);
 
   if (!tip) { res.status(404).json({ error: "Preservation request not found" }); return; }
 
