@@ -165,8 +165,8 @@ async function handleGetCrisisAlerts(_req: Request, res: Response): Promise<void
 
 // GET /api/clusters
 async function handleGetClusters(_req: Request, res: Response): Promise<void> {
-  const { tips } = await listTips({ status: "triaged", limit: 500 });
-  res.json(tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0));
+  const { tips } = await listTips({ status: "triaged", limit: 500, has_cluster_flags: true, exclude_body: true });
+  res.json(tips);
 }
 
 // GET /api/stats
@@ -237,8 +237,12 @@ async function handleGetMLAT(req: Request, res: Response): Promise<void> {
 
 // GET /api/mlat/requests
 async function handleListMLATRequests(req: Request, res: Response): Promise<void> {
-  const limit = parseInt((req.query["limit"] as string) ?? "100", 10);
-  const requests = await listMLATRequests(limit);
+  const limit  = Math.min(parseInt((req.query["limit"]  as string) ?? "100", 10), 500);
+  const offset = parseInt((req.query["offset"] as string) ?? "0", 10);
+  const { requests, total } = await listMLATRequests(limit, offset);
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Limit",       String(limit));
+  res.setHeader("X-Offset",      String(offset));
   res.json(requests);
 }
 

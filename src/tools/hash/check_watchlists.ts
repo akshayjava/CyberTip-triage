@@ -163,6 +163,9 @@ function getCachedFile(path: string): Promise<Buffer> {
 }
 
 // Project VIC — mTLS REST API
+let certPromise: Promise<Buffer> | null = null;
+let keyPromise: Promise<Buffer> | null = null;
+
 async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
   const endpoint = process.env["PROJECT_VIC_ENDPOINT"];
   const certPath  = process.env["PROJECT_VIC_CERT"];
@@ -175,12 +178,18 @@ async function queryProjectVIC(hash: string): Promise<WatchlistResult> {
     );
   }
 
+  // Load certificates into cache if not already present
+  if (!certPromise) certPromise = readFile(certPath);
+  if (!keyPromise)  keyPromise  = readFile(keyPath);
+
+  const [cert, key] = await Promise.all([certPromise, keyPromise]);
   // mTLS requires Node's https module with client certs
   // Optimized: Use async read with caching to avoid event loop blocking
   const [cert, key] = await Promise.all([
     getCachedFile(certPath),
     getCachedFile(keyPath)
   ]);
+  
   const url  = new URL(`/api/v2/hash/lookup`, endpoint);
 
   const responseBody: string = await new Promise((resolve, reject) => {

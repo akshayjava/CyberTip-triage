@@ -6,7 +6,7 @@ import type { CyberTip, TipFile } from "../models/index.js";
 // Force in-memory mode for all tests
 process.env["DB_MODE"] = "memory";
 
-const { upsertTip, getTipStats } = await import("../db/tips.js");
+const { upsertTip, getTipStats, getNightlyDigestStats } = await import("../db/tips.js");
 
 function makeTip(overrides: Partial<CyberTip> = {}): CyberTip {
   const tipId = randomUUID();
@@ -105,4 +105,30 @@ describe("getTipStats Performance", () => {
     // Rough check
     expect(stats.by_tier["IMMEDIATE"]).toBeGreaterThanOrEqual(COUNT / 5);
   }, 30000); // 30s timeout
+});
+
+describe("getNightlyDigestStats Performance", () => {
+  it("returns correct stats instead of using listTips memory loop", async () => {
+    // Generate tips from recent timeframe
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    await upsertTip(makeTip({
+      received_at: new Date().toISOString(),
+      priority: { score: 90, tier: "IMMEDIATE", scoring_factors: [], routing_unit: "", recommended_action: "", supervisor_alert: true, victim_crisis_alert: true }
+    }));
+    await upsertTip(makeTip({
+      received_at: new Date().toISOString(),
+      priority: { score: 70, tier: "STANDARD",    scoring_factors: [], routing_unit: "", recommended_action: "", supervisor_alert: false, victim_crisis_alert: false },
+      links: { cluster_flags: [{ cluster_id: "123" }] as any } as any
+    }));
+
+    const stats = await getNightlyDigestStats(yesterday);
+
+    // Test base metric extraction
+    expect(stats.total).toBeGreaterThanOrEqual(2);
+    expect(stats.crisis).toBeGreaterThanOrEqual(1);
+    expect(stats.by_tier["IMMEDIATE"]).toBeGreaterThanOrEqual(1);
+    expect(stats.by_tier["STANDARD"]).toBeGreaterThanOrEqual(1);
+    expect(stats.escalated).toBeGreaterThanOrEqual(1);
+  });
 });

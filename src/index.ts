@@ -20,7 +20,7 @@ import { apiLimiter } from "./middleware/rate-limit.js";
 import { startIdsPoller } from "./ingestion/ids_portal.js";
 import { startNcmecApiListener } from "./ingestion/ncmec_api.js";
 import { startEmailIngestion } from "./ingestion/email.js";
-import { startQueueWorkers } from "./ingestion/queue.js";
+import { startQueueWorkers, closeQueue } from "./ingestion/queue.js";
 import { loadConfig } from "./ingestion/config.js";
 import { warnIfAlertsUnconfigured } from "./tools/alerts/alert_tools.js";
 import { checkHashDBCredentials } from "./tools/hash/check_watchlists.js";
@@ -61,6 +61,7 @@ async function main(): Promise<void> {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;");
     next();
   });
 
@@ -145,7 +146,7 @@ async function main(): Promise<void> {
     console.log("\n[SERVER] SIGTERM received — shutting down");
     cleanups.forEach((fn) => fn());
     stopClusterScheduler();
-    process.exit(0);
+    void closeQueue().finally(() => process.exit(0));
   });
 
   // Reload offline hash databases on SIGHUP (e.g. after updating CSV files)

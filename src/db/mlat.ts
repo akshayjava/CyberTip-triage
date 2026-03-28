@@ -52,18 +52,27 @@ export async function saveMLATRequest(req: MLATRequestResult): Promise<void> {
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
-export async function listMLATRequests(limit = 100): Promise<MLATRequestResult[]> {
+export async function listMLATRequests(limit = 100, offset = 0): Promise<{ requests: MLATRequestResult[]; total: number }> {
   if (!isPostgres()) {
-    return Array.from(memStore.values())
-      .sort((a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime())
-      .slice(0, limit);
+    const sorted = Array.from(memStore.values())
+      .sort((a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime());
+    return {
+      requests: sorted.slice(offset, offset + limit),
+      total: sorted.length,
+    };
   }
 
   const pool = getPool();
-  const res = await pool.query<{ full_request_json: MLATRequestResult }>(
-    `SELECT full_request_json FROM mlat_requests ORDER BY created_at DESC LIMIT $1`,
-    [limit]
-  );
+  const [dataRes, countRes] = await Promise.all([
+    pool.query<{ full_request_json: MLATRequestResult }>(
+      `SELECT full_request_json FROM mlat_requests ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    ),
+    pool.query<{ count: string }>(`SELECT COUNT(*) AS count FROM mlat_requests`),
+  ]);
 
-  return res.rows.map(r => r.full_request_json);
+  return {
+    requests: dataRes.rows.map(r => r.full_request_json),
+    total: parseInt(countRes.rows[0]?.count ?? "0", 10),
+  };
 }
