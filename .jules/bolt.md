@@ -25,3 +25,7 @@
 ## 2026-03-06 - Concurrent Database Updates in Loops
 **Learning:** In the `runClusterScan` nightly job, processing `cluster.tip_ids` sequentially caused unnecessary latency for database lookups (`getTipById`) and updates (`upsertTip`, `appendAuditEntry`). Parallelizing these with `Promise.all` improves performance by ~70%.
 **Action:** Use `Promise.all` to parallelize asynchronous database operations within loops, but ensure side effects (like updating shared counters or arrays) are performed sequentially *after* the parallel batch resolves to maintain correctness.
+
+## 2026-03-07 - Redundant Array Iteration Overhead
+**Learning:** Functions computing multiple statistics from a single array (e.g., `getQueueStats` filtering `inMemoryQueue` for different statuses) were running separate `.filter().length` passes for each condition, causing unnecessary $O(M \times N)$ iteration overhead where $M$ is the number of conditions.
+**Action:** Consolidate multiple array filtering passes into a single $O(N)$ loop or `reduce` operation to compute all required categorical statistics simultaneously without redundant intermediate array allocations.
