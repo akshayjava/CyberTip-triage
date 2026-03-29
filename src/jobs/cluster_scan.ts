@@ -106,6 +106,25 @@ function normalizeUsername(username: string): string {
   return username.toLowerCase().replace(/[\d_-]{2,}$/, "").trim();
 }
 
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const v0 = new Array(b.length + 1);
+  const v1 = new Array(b.length + 1);
+  for (let i = 0; i <= b.length; i++) v0[i] = i;
+
+  for (let i = 0; i < a.length; i++) {
+    v1[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+  }
+  return v1[b.length];
+}
+
 // ── In-memory aggregation (dev mode) ─────────────────────────────────────────
 
 async function scanFromMemory(
@@ -181,11 +200,25 @@ async function scanFromMemory(
       }
     }
 
-    // Username pattern clustering — EntityMatch objects: use .value
+    // Username pattern clustering (Fuzzy via Levenshtein) — EntityMatch objects: use .value
     for (const unameMatch of ex?.usernames ?? []) {
       const username = String(unameMatch?.value ?? unameMatch ?? "");
       const key = normalizeUsername(username);
-      if (key.length >= 4) addToGroup(`username:${key}`, username, "username_pattern", tip.tip_id, date);
+      if (key.length >= 4) {
+        let bestKey = key;
+        let minDistance = 3; // Match if dist <= 2
+        for (const [groupKey, groupVal] of groups.entries()) {
+          if (groupVal.type === "username_pattern") {
+            const dist = levenshteinDistance(key, groupVal.key);
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestKey = groupVal.key;
+              if (dist === 0) break;
+            }
+          }
+        }
+        addToGroup(`username:${bestKey}`, bestKey, "username_pattern", tip.tip_id, date);
+      }
     }
   }
 
@@ -283,25 +316,49 @@ async function scanFromPostgres(
     groups.set(`geo:${row.area}`, { key: row.area, type: "same_geographic_area", tipIds: row.tip_ids, dates: row.dates });
   }
 
-  // Username pattern clustering
-  const usernameRes = await pool.query<{ pattern: string; tip_ids: string[]; dates: string[] }>(
-    `SELECT
-       regexp_replace(lower(username), '[0-9_-]+$', '') AS pattern,
-       array_agg(DISTINCT tip_id) AS tip_ids,
-       array_agg(received_at::text) AS dates
-     FROM (
-       SELECT tip_id, jsonb_array_elements_text(extracted->'usernames') AS username, received_at
-       FROM cyber_tips
-       WHERE received_at >= $1
-         AND extracted IS NOT NULL
-     ) sub
-     WHERE length(regexp_replace(lower(username), '[0-9_-]+$', '')) >= 4
-     GROUP BY pattern
-     HAVING COUNT(DISTINCT tip_id) >= $2`,
-    [cutoffISO, MIN_CLUSTER_SIZE]
+  // Username pattern clustering (Fuzzy via Levenshtein in memory)
+  const allUsernamesRes = await pool.query<{ username: string; tip_id: string; date: string }>(
+    `SELECT jsonb_array_elements_text(extracted->'usernames') AS username, tip_id, received_at::text AS date
+     FROM cyber_tips
+     WHERE received_at >= $1 AND extracted IS NOT NULL AND jsonb_array_length(extracted->'usernames') > 0`,
+    [cutoffISO]
   );
-  for (const row of usernameRes.rows) {
-    groups.set(`username:${row.pattern}`, { key: row.pattern, type: "username_pattern", tipIds: row.tip_ids, dates: row.dates });
+  
+  const usernameGroups: Array<{ key: string; tipIds: Set<string>; dates: string[] }> = [];
+
+  for (const row of allUsernamesRes.rows) {
+    const raw = row.username;
+    const key = normalizeUsername(raw);
+    if (key.length < 4) continue;
+
+    let bestMatch = null;
+    let minDistance = 3; // Accept distance of 1 or 2
+    for (const group of usernameGroups) {
+      const dist = levenshteinDistance(key, group.key);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestMatch = group;
+        if (dist === 0) break;
+      }
+    }
+
+    if (bestMatch) {
+      bestMatch.tipIds.add(row.tip_id);
+      bestMatch.dates.push(row.date);
+    } else {
+      usernameGroups.push({ key, tipIds: new Set([row.tip_id]), dates: [row.date] });
+    }
+  }
+
+  for (const group of usernameGroups) {
+    if (group.tipIds.size >= MIN_CLUSTER_SIZE) {
+      groups.set(`username:${group.key}`, { 
+        key: group.key, 
+        type: "username_pattern", 
+        tipIds: Array.from(group.tipIds), 
+        dates: group.dates 
+      });
+    }
   }
 
   return groups;

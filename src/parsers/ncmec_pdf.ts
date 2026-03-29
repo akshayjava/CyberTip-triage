@@ -335,6 +335,28 @@ export function validateNcmecPdf(parsed: NcmecPdfParsed): ValidationResult {
     errors.push("No files and empty incident description");
   }
 
+  // Completeness / Integrity check (>50% critical fields must be present)
+  // This detects silent failures where the PDF format changed but parsing "succeeded" with empty fields
+  const expectedFields = [
+    parsed.ncmec_tip_number,
+    parsed.section_a.esp_name,
+    parsed.section_a.incident_description,
+    parsed.section_a.incident_time,
+    parsed.section_a.subject_ip || parsed.section_a.subject_email || parsed.section_a.subject_username,
+    parsed.section_b.isp || parsed.section_b.ip_geolocation,
+    parsed.section_b.country || parsed.section_b.city
+  ];
+
+  const presentCount = expectedFields.filter(f => f && String(f).trim().length > 0).length;
+  const ratio = presentCount / expectedFields.length;
+
+  if (ratio < 0.5) {
+    errors.push(
+      `Parse integrity failure: Only ${presentCount}/${expectedFields.length} critical fields found ` + 
+      `(${Math.round(ratio * 100)}%). NCMEC PDF format may have changed.`
+    );
+  }
+
   // Section A check
   if (!parsed.section_a.esp_name && !parsed.section_a.subject_ip && !parsed.section_a.subject_email) {
     // Very empty section A

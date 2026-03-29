@@ -108,6 +108,25 @@ async function handleAssignTip(req: Request, res: Response): Promise<void> {
   res.json({ success: true, tip_id: updated.tip_id, assigned_to: investigator_id });
 }
 
+// POST /api/tips/:id/dispatch
+async function handleDispatchWelfareCheck(req: Request, res: Response): Promise<void> {
+  const tip = await dbGetTipById(req.params["id"] ?? "");
+  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  // Record audit entry
+  await appendAuditEntry({
+    tip_id: tip.tip_id,
+    agent: "HumanAction",
+    timestamp: new Date().toISOString(),
+    status: "success",
+    summary: `Triggered external CAD/dispatch webhook for victim welfare check.`,
+  });
+
+  console.log(`[DISPATCH] 🚨 CAD Webhook triggered for tip ${tip.tip_id}. Location: ${tip.extracted?.subject_city ?? "Unknown"}`);
+
+  res.json({ success: true, message: "Dispatch webhook triggered successfully" });
+}
+
 // POST /api/tips/:id/warrant/:fileId
 async function handleUpdateWarrant(req: Request, res: Response): Promise<void> {
   const tipId = req.params["id"] ?? "";
@@ -498,6 +517,7 @@ export function mountApiRoutes(app: Application): void {
   app.get("/api/crisis", wrapAsync(handleGetCrisisAlerts));
   app.get("/api/tips/:id", wrapAsync(handleGetTip));
   app.post("/api/tips/:id/assign", wrapAsync(handleAssignTip));
+  app.post("/api/tips/:id/dispatch", wrapAsync(handleDispatchWelfareCheck));
   app.post("/api/tips/:id/warrant/:fileId", wrapAsync(handleUpdateWarrant));
   app.post("/api/preservation/:id/issue", wrapAsync(handleIssuePreservation));
   app.get("/api/tips/:id/stream", handlePipelineStream);

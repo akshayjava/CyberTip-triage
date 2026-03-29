@@ -517,14 +517,46 @@ export async function startIdsPoller(config: IngestionConfig): Promise<() => voi
       if (consecutiveFailures >= 5) {
         const backoffMs = Math.min(consecutiveFailures * 2 * 60_000, 30 * 60_000);
         console.warn(`[IDS] ${consecutiveFailures} consecutive failures — backing off ${backoffMs / 60_000} min`);
+        
+        if (consecutiveFailures === 5) {
+          await alertSupervisor(
+            "system-poller",
+            "IDS_POLL_FAILURE",
+            50,
+            "Check NCMEC IDS portal credentials and verify TOTP server time drift.",
+            `IDS Poller has failed 5 consecutive times. Backing off polling interval to protect account.`
+          ).catch((e) => console.error("[IDS] Failed to send failure alert", e));
+        }
       }
     }
   }
 
-  // Run immediately on startup, then on interval
-  await poll();
-  const interval = setInterval(() => void poll(), config.ids_portal.poll_interval_ms);
-  return () => clearInterval(interval);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let isStopped = false;
+
+  async function runLoop() {
+    if (isStopped) return;
+    const startMs = Date.now();
+    await poll();
+    if (isStopped) return;
+
+    let delayMs = config.ids_portal.poll_interval_ms;
+    if (consecutiveFailures >= 5) {
+      delayMs = Math.min(consecutiveFailures * 2 * 60_000, 30 * 60_000);
+    }
+    const elapsed = Date.now() - startMs;
+    const nextTimeout = Math.max(0, delayMs - elapsed);
+    
+    timer = setTimeout(() => void runLoop(), nextTimeout);
+  }
+
+  // Run immediately on startup, then schedule next
+  void runLoop();
+  
+  return () => {
+    isStopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }
 
 // ── Manual injection for testing ───────────────────────────────────────────────
