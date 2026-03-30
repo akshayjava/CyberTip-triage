@@ -8,7 +8,7 @@
  * No new dependencies — uses listTips, getTipStats, alertSupervisor.
  */
 
-import { listTips, getTipStats } from "../db/tips.js";
+import { listTips, getTipStats, getNightlyDigestStats } from "../db/tips.js";
 import { alertSupervisor } from "../tools/alerts/alert_tools.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -23,76 +23,48 @@ async function sendNightlyDigest(): Promise<void> {
   log.info(`Generating shift-change digest for window since ${windowStart}`);
 
   try {
-    // ── Fetch tips received in the last 12 hours ───────────────────────────────
-    // Exclude body/files to keep memory usage low — we only need priority metadata.
-    const { tips } = await listTips({
-      since: windowStart,
-      limit: 1000,
-      exclude_body: true,
-      exclude_files: true,
-    });
+    // ⚡ Bolt Optimization: Use getNightlyDigestStats to push counts and categorizations
+    // down to the database instead of fetching 1000 full tip records into Node.js memory.
+    const digestStats = await getNightlyDigestStats(windowStart);
 
     // ── Overall system stats (all-time totals for context) ────────────────────
     const stats = await getTipStats();
 
-    if (tips.length === 0) {
+    if (digestStats.total === 0) {
       log.info("No tips received in the last 12 hours — skipping digest email.");
       return;
     }
 
-    // ── Bucket overnight tips by tier ─────────────────────────────────────────
-    const counts: Record<string, number> = {
-      IMMEDIATE: 0,
-      URGENT: 0,
-      STANDARD: 0,
-      MONITOR: 0,
-      PAUSED: 0,
-      pending: 0,
-    };
+    // ── Fetch detailed tips for the email ─────────────────────────────────────
+    // Only fetch the high-priority tips needed for the detailed list, instead of all tips.
+    const { tips: immediateList } = await listTips({
+      since: windowStart,
+      tier: "IMMEDIATE",
+      limit: 50,
+      exclude_body: true,
+      exclude_files: true,
+    });
 
-    let crisisCount = 0;
-    let clusterEscalationCount = 0;
+    const { tips: urgentList } = await listTips({
+      since: windowStart,
+      tier: "URGENT",
+      limit: 50,
+      exclude_body: true,
+      exclude_files: true,
+    });
 
     // Collect high-priority tip summaries for the detailed section.
-    const immediateTips: Array<{ tip_id: string; score: number; category: string }> = [];
-    const urgentTips:    Array<{ tip_id: string; score: number; category: string }> = [];
+    const immediateTips = immediateList.map(tip => ({
+      tip_id:   tip.tip_id,
+      score:    tip.priority?.score ?? 0,
+      category: tip.classification?.primary_offense ?? "Unknown",
+    }));
 
-    for (const tip of tips) {
-      const tier = (tip.priority?.tier ?? "pending") as keyof typeof counts;
-      if (counts[tier] !== undefined) {
-        counts[tier] = (counts[tier] ?? 0) + 1;
-      } else {
-        counts["pending"] = (counts["pending"] ?? 0) + 1;
-      }
-
-      if (tip.priority?.victim_crisis_alert === true) {
-        crisisCount++;
-      }
-
-      // Proxy for cluster escalations: tip has cluster flags and is above MONITOR tier.
-      const clusterFlags = (tip.links?.cluster_flags as unknown[]) ?? [];
-      if (clusterFlags.length > 0 && tier !== "MONITOR" && tier !== "PAUSED") {
-        clusterEscalationCount++;
-      }
-
-      // Collect IMMEDIATE tips for the detailed listing.
-      if (tier === "IMMEDIATE") {
-        immediateTips.push({
-          tip_id:   tip.tip_id,
-          score:    tip.priority?.score ?? 0,
-          category: tip.classification?.primary_offense ?? "Unknown",
-        });
-      }
-
-      // Collect URGENT tips for the detailed listing.
-      if (tier === "URGENT") {
-        urgentTips.push({
-          tip_id:   tip.tip_id,
-          score:    tip.priority?.score ?? 0,
-          category: tip.classification?.primary_offense ?? "Unknown",
-        });
-      }
-    }
+    const urgentTips = urgentList.map(tip => ({
+      tip_id:   tip.tip_id,
+      score:    tip.priority?.score ?? 0,
+      category: tip.classification?.primary_offense ?? "Unknown",
+    }));
 
     // ── Build plain-text email body ───────────────────────────────────────────
     const dateLabel = now.toLocaleDateString("en-US", {
@@ -107,16 +79,16 @@ async function sendNightlyDigest(): Promise<void> {
       "",
       `SHIFT ACTIVITY (${windowLabel})`,
       "-".repeat(36),
-      `New tips received:     ${tips.length}`,
-      `Crisis alerts:         ${crisisCount}`,
-      `Cluster escalations:   ${clusterEscalationCount}`,
+      `New tips received:     ${digestStats.total}`,
+      `Crisis alerts:         ${digestStats.crisis}`,
+      `Cluster escalations:   ${digestStats.escalated}`,
       "",
       "BREAKDOWN BY TIER (shift):",
-      `  IMMEDIATE:  ${counts["IMMEDIATE"]}`,
-      `  URGENT:     ${counts["URGENT"]}`,
-      `  STANDARD:   ${counts["STANDARD"]}`,
-      `  MONITOR:    ${counts["MONITOR"]}`,
-      `  PAUSED:     ${counts["PAUSED"]}`,
+      `  IMMEDIATE:  ${digestStats.by_tier["IMMEDIATE"]}`,
+      `  URGENT:     ${digestStats.by_tier["URGENT"]}`,
+      `  STANDARD:   ${digestStats.by_tier["STANDARD"]}`,
+      `  MONITOR:    ${digestStats.by_tier["MONITOR"]}`,
+      `  PAUSED:     ${digestStats.by_tier["PAUSED"]}`,
     ];
 
     // Detailed IMMEDIATE tip listing
@@ -160,9 +132,9 @@ async function sendNightlyDigest(): Promise<void> {
 
     // One-line summary used as the alertSupervisor "summary" argument.
     const briefSummary =
-      `Shift-change digest: ${tips.length} new tips in the last ${WINDOW_HOURS}h — ` +
-      `${counts["IMMEDIATE"]} IMMEDIATE, ${counts["URGENT"]} URGENT, ` +
-      `${crisisCount} crisis alert(s), ${clusterEscalationCount} cluster escalation(s).`;
+      `Shift-change digest: ${digestStats.total} new tips in the last ${WINDOW_HOURS}h — ` +
+      `${digestStats.by_tier["IMMEDIATE"]} IMMEDIATE, ${digestStats.by_tier["URGENT"]} URGENT, ` +
+      `${digestStats.crisis} crisis alert(s), ${digestStats.escalated} cluster escalation(s).`;
 
     // alertSupervisor routes through the same SMTP transport and console fallback
     // used by all supervisor alerts — no new sending code required.
@@ -175,8 +147,8 @@ async function sendNightlyDigest(): Promise<void> {
     );
 
     log.info(
-      `Digest sent — ${tips.length} tips, ${counts["IMMEDIATE"]} IMMEDIATE, ` +
-      `${counts["URGENT"]} URGENT, ${crisisCount} crisis, ${clusterEscalationCount} escalations.`
+      `Digest sent — ${digestStats.total} tips, ${digestStats.by_tier["IMMEDIATE"]} IMMEDIATE, ` +
+      `${digestStats.by_tier["URGENT"]} URGENT, ${digestStats.crisis} crisis, ${digestStats.escalated} escalations.`
     );
 
   } catch (err) {
