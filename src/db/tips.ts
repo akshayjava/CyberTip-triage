@@ -468,8 +468,20 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     allFiles = filesResult.rows;
   }
 
+  // ⚡ Bolt Optimization: Replace O(N*M) nested array filter with O(N+M) Map grouping
+  // This drastically reduces CPU overhead when listing 500+ tips with multiple files.
+  const filesByTip = new Map<string, FileRow[]>();
+  for (const f of allFiles) {
+    let arr = filesByTip.get(f.tip_id);
+    if (!arr) {
+      arr = [];
+      filesByTip.set(f.tip_id, arr);
+    }
+    arr.push(f);
+  }
+
   const tips = dataResult.rows.map((row) => {
-    const files = allFiles.filter((f) => f.tip_id === row.tip_id);
+    const files = filesByTip.get(row.tip_id) ?? [];
     return assembleTip(row, files, [], []);
   });
 

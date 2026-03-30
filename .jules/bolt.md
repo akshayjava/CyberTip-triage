@@ -29,3 +29,7 @@
 ## 2026-03-07 - Redundant Array Iteration Overhead
 **Learning:** Functions computing multiple statistics from a single array (e.g., `getQueueStats` filtering `inMemoryQueue` for different statuses) were running separate `.filter().length` passes for each condition, causing unnecessary $O(M \times N)$ iteration overhead where $M$ is the number of conditions.
 **Action:** Consolidate multiple array filtering passes into a single $O(N)$ loop or `reduce` operation to compute all required categorical statistics simultaneously without redundant intermediate array allocations.
+
+## 2026-03-08 - O(N*M) Array Filtering in Object Hydration
+**Learning:** In `src/db/tips.ts`, the `listTips` function combined tips with their files using a nested `.filter()` loop: `allFiles.filter(f => f.tip_id === row.tip_id)` inside a `.map()`. This resulted in an $O(N \times M)$ time complexity, causing significant CPU overhead and event loop blocking when querying large pages of tips (e.g., 500+ records) with multiple files each.
+**Action:** Always replace nested array searches during object hydration with an $O(N+M)$ Map or Object lookup. Build a grouping dictionary once, then retrieve the related items in $O(1)$ time per row.
