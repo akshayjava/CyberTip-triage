@@ -33,3 +33,7 @@
 ## 2026-03-08 - O(N*M) Array Filtering in Object Hydration
 **Learning:** In `src/db/tips.ts`, the `listTips` function combined tips with their files using a nested `.filter()` loop: `allFiles.filter(f => f.tip_id === row.tip_id)` inside a `.map()`. This resulted in an $O(N \times M)$ time complexity, causing significant CPU overhead and event loop blocking when querying large pages of tips (e.g., 500+ records) with multiple files each.
 **Action:** Always replace nested array searches during object hydration with an $O(N+M)$ Map or Object lookup. Build a grouping dictionary once, then retrieve the related items in $O(1)$ time per row.
+
+## 2026-03-31 - Consolidate filtering for array of records
+**Learning:** Running multiple `.filter()` operations consecutively over large in-memory arrays (like `listTips` doing 9 separate filters in dev mode) incurs significant O(K*N) CPU overhead and unnecessary object allocations. Duplicate conditions pushed to the database querying layer (like `opts.unit`) unnecessarily bloats generated SQL.
+**Action:** Always combine array filtering logic into a single `.filter()` pass evaluating all conditions at once (O(N)). When building dynamic query conditions, ensure keys aren't pushed redundantly to avoid duplicating `WHERE` clauses.

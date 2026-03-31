@@ -319,37 +319,41 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (!isPostgres()) {
     let tips = Array.from(memStore.values());
 
-    if (opts.tier) {
-      tips = tips.filter((t) => t.priority?.tier === opts.tier);
-    }
-    if (opts.unit) {
-      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
-    }
-    if (opts.has_cluster_flags) {
-      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
-    }
-    if (opts.status) {
-      tips = tips.filter((t) => t.status === opts.status);
-    }
-    if (opts.unit) {
-      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
-    }
-    if (opts.is_bundled !== undefined) {
-      tips = tips.filter((t) => t.is_bundled === opts.is_bundled);
-    }
-    if (opts.unit) {
-      tips = tips.filter((t) => t.priority?.routing_unit === opts.unit);
-    }
-    if (opts.crisis_only) {
-      tips = tips.filter(
-        (t) =>
-          t.priority?.victim_crisis_alert === true ||
-          t.classification?.sextortion_victim_in_crisis === true
-      );
-    }
-    if (opts.since) {
-      const sinceTime = new Date(opts.since).getTime();
-      tips = tips.filter((t) => new Date(t.received_at).getTime() >= sinceTime);
+    // ⚡ Bolt Optimization: Combine 9 separate O(N) filters into a single O(N) pass.
+    // Also removes redundant checks for opts.unit and opts.has_cluster_flags.
+    if (
+      opts.tier ||
+      opts.unit ||
+      opts.has_cluster_flags ||
+      opts.status ||
+      opts.is_bundled !== undefined ||
+      opts.crisis_only ||
+      opts.since
+    ) {
+      const sinceTime = opts.since ? new Date(opts.since).getTime() : 0;
+      tips = tips.filter((t) => {
+        if (opts.tier && t.priority?.tier !== opts.tier) return false;
+        if (opts.unit && t.priority?.routing_unit !== opts.unit) return false;
+        if (
+          opts.has_cluster_flags &&
+          ((t.links?.cluster_flags as unknown[]) ?? []).length === 0
+        )
+          return false;
+        if (opts.status && t.status !== opts.status) return false;
+        if (opts.is_bundled !== undefined && t.is_bundled !== opts.is_bundled)
+          return false;
+        if (
+          opts.crisis_only &&
+          !(
+            t.priority?.victim_crisis_alert === true ||
+            t.classification?.sextortion_victim_in_crisis === true
+          )
+        )
+          return false;
+        if (sinceTime && new Date(t.received_at).getTime() < sinceTime)
+          return false;
+        return true;
+      });
     }
 
     // Sort: tier order, then score descending
@@ -371,10 +375,6 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     // ⚡ Bolt Optimization: Exclude files (memory mode)
     if (opts.exclude_files) {
       tips = tips.map((t) => ({ ...t, files: [] }));
-    }
-
-    if (opts.has_cluster_flags) {
-      tips = tips.filter((t) => ((t.links?.cluster_flags as unknown[]) ?? []).length > 0);
     }
 
     const total = tips.length;
@@ -403,10 +403,6 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
     conditions.push(`status = $${paramIdx++}`);
     params.push(opts.status);
   }
-  if (opts.unit) {
-    conditions.push(`priority->>'routing_unit' = $${paramIdx++}`);
-    params.push(opts.unit);
-  }
   if (opts.is_bundled !== undefined) {
     conditions.push(`is_bundled = $${paramIdx++}`);
     params.push(opts.is_bundled);
@@ -419,9 +415,6 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
   if (opts.since) {
     conditions.push(`received_at >= $${paramIdx++}`);
     params.push(opts.since);
-  }
-  if (opts.has_cluster_flags) {
-    conditions.push(`jsonb_typeof(links->'cluster_flags') = 'array' AND jsonb_array_length(links->'cluster_flags') > 0`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
