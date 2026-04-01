@@ -37,3 +37,7 @@
 ## 2026-03-31 - Consolidate filtering for array of records
 **Learning:** Running multiple `.filter()` operations consecutively over large in-memory arrays (like `listTips` doing 9 separate filters in dev mode) incurs significant O(K*N) CPU overhead and unnecessary object allocations. Duplicate conditions pushed to the database querying layer (like `opts.unit`) unnecessarily bloats generated SQL.
 **Action:** Always combine array filtering logic into a single `.filter()` pass evaluating all conditions at once (O(N)). When building dynamic query conditions, ensure keys aren't pushed redundantly to avoid duplicating `WHERE` clauses.
+
+## 2026-04-01 - Sequential API Calls in Route Handlers
+**Learning:** Using sequential `await` in a `for...of` loop to save individually generated database records (e.g., `saveMLATRequest`) forces the event loop to block on each I/O operation one by one, scaling latency linearly ($O(N)$) with the number of operations.
+**Action:** Replace sequential `await` loops with `Promise.all` mapping when writing independent database records concurrently. This executes all operations simultaneously, reducing total I/O wait time to roughly $O(1)$ (the time of the slowest single query).
