@@ -65,14 +65,11 @@ const PBKDF2_KEYLEN = 32;
 const SALT_LEN      = 16;
 
 if (SECRET.length < 32) {
-  if (process.env["AUTH_ENABLED"] === "true") {
-    throw new Error(
-      `SECURITY FATAL: JWT_SECRET is only ${SECRET.length} characters. ` +
-      `AUTH_ENABLED=true requires a minimum 32-character (256-bit) secret. ` +
-      `Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
-    );
-  }
-  console.warn("[AUTH] WARNING: JWT_SECRET is short (<32 chars). Set a 256-bit secret before enabling AUTH_ENABLED=true.");
+  throw new Error(
+    `SECURITY FATAL: JWT_SECRET is only ${SECRET.length} characters. ` +
+    `A minimum 32-character (256-bit) secret is required. ` +
+    `Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+  );
 }
 
 // ── JWT internals ─────────────────────────────────────────────────────────────

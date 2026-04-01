@@ -29,7 +29,7 @@ describe("JWT Auth Configuration", () => {
   });
 
   it("should load successfully if JWT_SECRET is present", async () => {
-    process.env.JWT_SECRET = "test-secret-value";
+    process.env.JWT_SECRET = "test-secret-value-must-be-at-least-32-chars-long";
     const jwt = await import("../../auth/jwt.js");
     expect(jwt).toBeDefined();
   });
@@ -41,7 +41,7 @@ describe("JWT Auth Functions", () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    process.env.JWT_SECRET = "test-secret-value";
+    process.env.JWT_SECRET = "test-secret-value-must-be-at-least-32-chars-long";
 
     // Dynamic import to pick up the env var
     jwtModule = await import("../../auth/jwt.js");

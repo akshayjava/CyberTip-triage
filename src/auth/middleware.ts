@@ -35,9 +35,6 @@ const INACTIVITY_MS = 30 * 60 * 1000; // CJIS: 30 minutes
 /**
  * Main auth middleware. Attach to app.use("/api", authMiddleware) after
  * setting AUTH_ENABLED=true in .env.
- *
- * When AUTH_ENABLED is not set, passes through with a warning — allows
- * development without credentials configured.
  */
 export async function authMiddleware(
   req: Request,
@@ -47,26 +44,6 @@ export async function authMiddleware(
   // Bypass for public routes
   const routePath = (req as { path?: string }).path ?? req.url ?? "";
   if (PUBLIC_ROUTES.has(routePath)) { next(); return; }
-
-  // Bypass when auth is not enabled (dev mode)
-  if (process.env["AUTH_ENABLED"] !== "true") {
-    // Attach a synthetic dev session so downstream code can read role
-    req.session = {
-      officer_id:           "dev-officer",
-      badge_number:         "DEV-001",
-      name:                 "Development Officer",
-      role:                 "admin",    // Full access in dev
-      unit:                 "ICAC",
-      specialty:            null,
-      max_concurrent_cases: 999,
-      jti:                  "dev-jti",
-      iat:                  Math.floor(Date.now() / 1000),
-      exp:                  Math.floor(Date.now() / 1000) + 28800,
-      last_active_at:       new Date().toISOString(),
-    };
-    next();
-    return;
-  }
 
   const token = extractBearer(req.headers["authorization"]);
   if (!token) {
