@@ -247,9 +247,9 @@ async function handleGetMLAT(req: Request, res: Response): Promise<void> {
   const requests = generateMLATRequest(tip);
 
   // Persist generated requests so they are tracked in admin/dashboard
-  for (const r of requests) {
-    await saveMLATRequest(r);
-  }
+  // ⚡ Bolt Optimization: Replace sequential await loop with Promise.all to execute
+  // independent database writes concurrently and reduce total I/O wait time.
+  await Promise.all(requests.map(r => saveMLATRequest(r)));
 
   res.json({ needs_mlat: true, requests });
 }
