@@ -265,15 +265,14 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
 
   const pool = getPool();
 
-  // Fetch tip row
-  const tipRow = await pool.query<TipRow>(
-    `SELECT * FROM cyber_tips WHERE tip_id = $1`,
-    [tipId]
-  );
-  if (tipRow.rows.length === 0) return null;
-
-  // Fetch associated data concurrently
-  const [filesRow, presRow, auditRow] = await Promise.all([
+  // ⚡ Bolt Optimization: Fetch the main tip row and all associated data
+  // concurrently in a single Promise.all. This saves one full database
+  // round-trip of latency per getTipById call.
+  const [tipRow, filesRow, presRow, auditRow] = await Promise.all([
+    pool.query<TipRow>(
+      `SELECT * FROM cyber_tips WHERE tip_id = $1`,
+      [tipId]
+    ),
     pool.query<FileRow>(
       `SELECT * FROM tip_files WHERE tip_id = $1 ORDER BY created_at`,
       [tipId]
@@ -287,6 +286,8 @@ export async function getTipById(tipId: string): Promise<CyberTip | null> {
       [tipId]
     ),
   ]);
+
+  if (tipRow.rows.length === 0) return null;
 
   return assembleTip(tipRow.rows[0]!, filesRow.rows, presRow.rows, auditRow.rows);
 }
