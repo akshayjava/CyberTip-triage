@@ -248,9 +248,13 @@ export async function recordWarrantGrant(
 
   // Unblock all files covered by this warrant
   // Note: updateFileWarrant writes to DB (if postgres) and handles audit log
-  for (const fileId of app.file_ids) {
-    await updateFileWarrant(app.tip_id, fileId, "granted", warrantNumber, grantingJudge);
-  }
+  // ⚡ Bolt Optimization: Replace sequential database updates with Promise.all
+  // to parallelize file unblocking and significantly reduce total latency.
+  await Promise.all(
+    app.file_ids.map(fileId =>
+      updateFileWarrant(app.tip_id, fileId, "granted", warrantNumber, grantingJudge)
+    )
+  );
 
   return app;
 }
