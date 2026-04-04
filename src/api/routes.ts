@@ -20,6 +20,7 @@
 import type { Application, Request, Response } from "express";
 import { onPipelineEvent } from "../orchestrator.js";
 import { getQueueStats } from "../ingestion/queue.js";
+import { canAccessUnit, redactForAnalyst } from "../auth/jwt.js";
 import {
   upsertTip,
   getTipById as dbGetTipById,
@@ -78,6 +79,19 @@ async function handleGetQueue(req: Request, res: Response): Promise<void> {
 async function handleGetTip(req: Request, res: Response): Promise<void> {
   const tip = await dbGetTipById(req.params["id"] ?? "");
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  if (req.session && tip.priority?.routing_unit) {
+    if (!canAccessUnit(req.session, String(tip.priority.routing_unit))) {
+      res.status(403).json({ error: "Access denied to this tip's unit", code: "UNIT_ACCESS_DENIED" });
+      return;
+    }
+  }
+
+  if (req.session?.role === "analyst") {
+    res.json(redactForAnalyst(tip));
+    return;
+  }
+
   res.json(tip);
 }
 
