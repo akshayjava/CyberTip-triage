@@ -136,7 +136,7 @@ describe("searchCaseDatabase (Real Mode)", () => {
     expect(sql).toContain("similarity(elem->>'value', $1)");
   });
 
-  it("falls back to ILIKE for unknown entity type", async () => {
+  it("falls back to plainto_tsquery for unknown entity type", async () => {
      mockQuery.mockResolvedValueOnce({
       rows: [
         {
@@ -153,7 +153,7 @@ describe("searchCaseDatabase (Real Mode)", () => {
 
     expect(mockQuery).toHaveBeenCalledTimes(1);
     const sql = mockQuery.mock.calls[0][0];
-    expect(sql).toContain("ct.extracted::text ILIKE $1");
+    expect(sql).toContain("ct.extracted::text @@ plainto_tsquery($1)");
     expect(result.data.results[0].relevance_score).toBe(0.5);
   });
 });

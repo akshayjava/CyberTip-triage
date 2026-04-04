@@ -41,3 +41,7 @@
 ## 2026-04-01 - Sequential API Calls in Route Handlers
 **Learning:** Using sequential `await` in a `for...of` loop to save individually generated database records (e.g., `saveMLATRequest`) forces the event loop to block on each I/O operation one by one, scaling latency linearly ($O(N)$) with the number of operations.
 **Action:** Replace sequential `await` loops with `Promise.all` mapping when writing independent database records concurrently. This executes all operations simultaneously, reducing total I/O wait time to roughly $O(1)$ (the time of the slowest single query).
+
+## 2026-04-02 - Sequential Queries in Object Hydration
+**Learning:** In `getTipById`, the codebase fetched the parent record `cyber_tips`, awaited it, and only then initiated a `Promise.all` for child queries (`tip_files`, `preservation_requests`, `audit_log`). This sequential pattern adds a full database round-trip of latency per tip lookup, which is a significant bottleneck for high-frequency operations.
+**Action:** Consolidate parent and child queries into a single `Promise.all` batch whenever possible. Wait for the batch to resolve, then check if the parent row exists before hydrating objects to save a full sequential database round-trip.
