@@ -45,3 +45,7 @@
 ## 2026-04-02 - Sequential Queries in Object Hydration
 **Learning:** In `getTipById`, the codebase fetched the parent record `cyber_tips`, awaited it, and only then initiated a `Promise.all` for child queries (`tip_files`, `preservation_requests`, `audit_log`). This sequential pattern adds a full database round-trip of latency per tip lookup, which is a significant bottleneck for high-frequency operations.
 **Action:** Consolidate parent and child queries into a single `Promise.all` batch whenever possible. Wait for the batch to resolve, then check if the parent row exists before hydrating objects to save a full sequential database round-trip.
+
+## 2026-04-05 - O(N log N) Overhead in Queue Polling
+**Learning:** Code searching for a single extremum element (like picking the highest priority item from `inMemoryQueue`) was using chained array operations: `.filter().sort()[0]`. This enforces O(N log N) complexity and allocates unnecessary arrays for an operation that runs extremely frequently in the event loop.
+**Action:** Always replace chained `.filter().sort()[0]` with a single O(N) iteration loop when seeking a single extremum value to reduce CPU blocking and memory churn in hot paths.
