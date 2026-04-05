@@ -53,6 +53,8 @@ async function processNextJob(): Promise<void> {
       if (!next || j.priority < next.priority) {
         next = j;
       }
+      // Optimization: 1 is the highest possible priority, so we can stop early
+      if (next.priority === 1) break;
     }
   }
 
