@@ -51,18 +51,18 @@ export interface LoginResponse { token: string; session: AuthSession; expires_at
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
-const SECRET          = process.env["JWT_SECRET"];
-
-if (!SECRET) {
-  throw new Error("JWT_SECRET environment variable is required");
-}
-
 const TOKEN_TTL       = 8 * 60 * 60;       // 8 hours in seconds
 const INACTIVITY_TTL  = 30 * 60 * 1000;    // 30 min in ms (CJIS § 5.6.2.1)
 
 const PBKDF2_ITERS  = 600_000;
 const PBKDF2_KEYLEN = 32;
 const SALT_LEN      = 16;
+
+const SECRET          = process.env["JWT_SECRET"] ?? "";
+
+if (!SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
 
 if (SECRET.length < 32) {
   throw new Error(

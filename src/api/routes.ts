@@ -75,17 +75,22 @@ async function handleGetQueue(req: Request, res: Response): Promise<void> {
   res.json(grouped);
 }
 
+function authorizeTipAccess(tip: import("../models/index.js").CyberTip, req: Request, res: Response): boolean {
+  if (req.session && tip.priority?.routing_unit) {
+    if (!canAccessUnit(req.session, String(tip.priority.routing_unit))) {
+      res.status(403).json({ error: "Access denied to this tip's unit", code: "UNIT_ACCESS_DENIED" });
+      return false;
+    }
+  }
+  return true;
+}
+
 // GET /api/tips/:id
 async function handleGetTip(req: Request, res: Response): Promise<void> {
   const tip = await dbGetTipById(req.params["id"] ?? "");
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
 
-  if (req.session && tip.priority?.routing_unit) {
-    if (!canAccessUnit(req.session, String(tip.priority.routing_unit))) {
-      res.status(403).json({ error: "Access denied to this tip's unit", code: "UNIT_ACCESS_DENIED" });
-      return;
-    }
-  }
+  if (!authorizeTipAccess(tip, req, res)) return;
 
   if (req.session?.role === "analyst") {
     res.json(redactForAnalyst(tip));
@@ -99,6 +104,8 @@ async function handleGetTip(req: Request, res: Response): Promise<void> {
 async function handleAssignTip(req: Request, res: Response): Promise<void> {
   const tip = await dbGetTipById(req.params["id"] ?? "");
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  if (!authorizeTipAccess(tip, req, res)) return;
 
   const { investigator_id, investigator_name } = req.body as {
     investigator_id?: string;
@@ -127,6 +134,8 @@ async function handleDispatchWelfareCheck(req: Request, res: Response): Promise<
   const tip = await dbGetTipById(req.params["id"] ?? "");
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
 
+  if (!authorizeTipAccess(tip, req, res)) return;
+
   // Record audit entry
   await appendAuditEntry({
     tip_id: tip.tip_id,
@@ -153,10 +162,13 @@ async function handleUpdateWarrant(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "status must be: applied | granted | denied" }); return;
   }
 
-  const updatedFile = await updateFileWarrant(tipId, fileId, status!, warrant_number, granted_by);
-  if (!updatedFile) { res.status(404).json({ error: "Tip or file not found" }); return; }
-
   const tip = await dbGetTipById(tipId);
+  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+  if (!authorizeTipAccess(tip, req, res)) return;
+
+  const updatedFile = await updateFileWarrant(tipId, fileId, status!, warrant_number, granted_by);
+  if (!updatedFile) { res.status(404).json({ error: "File not found" }); return; }
+
   if (tip) {
     const updatedFiles = tip.files.map((f: import("../models/index.js").TipFile) => (f.file_id === fileId ? updatedFile : f));
     const stillBlocked = updatedFiles.filter((f: import("../models/index.js").TipFile) => f.file_access_blocked).length;
@@ -252,6 +264,8 @@ async function handleTriggerClusterScan(_req: Request, res: Response): Promise<v
 async function handleGetMLAT(req: Request, res: Response): Promise<void> {
   const tip = await dbGetTipById(req.params["id"] ?? "");
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  if (!authorizeTipAccess(tip, req, res)) return;
 
   if (!tipNeedsMLAT(tip)) {
     res.json({ needs_mlat: false, message: "No international subjects identified in this tip." });
@@ -383,6 +397,11 @@ async function handleGenerateForensicsHandoff(req: Request, res: Response): Prom
   if (!platform) { res.status(400).json({ error: "platform required" }); return; }
   if (!generated_by) { res.status(400).json({ error: "generated_by required" }); return; }
 
+  const tip = await dbGetTipById(tipId);
+  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+
+  if (!authorizeTipAccess(tip, req, res)) return;
+
   const parsed = ForensicsPlatformSchema.safeParse(platform.toUpperCase());
   if (!parsed.success) {
     res.status(400).json({
@@ -403,9 +422,6 @@ async function handleGenerateForensicsHandoff(req: Request, res: Response): Prom
       return;
     }
   }
-
-  const tip = await dbGetTipById(tipId);
-  if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
 
   if (!tip.classification || !tip.priority) {
     res.status(409).json({ error: "Tip has not completed triage pipeline — cannot generate handoff" });
@@ -443,6 +459,7 @@ async function handleListTipForensicsHandoffs(req: Request, res: Response): Prom
   const tipId = req.params["id"] ?? "";
   const tip = await dbGetTipById(tipId);
   if (!tip) { res.status(404).json({ error: "Tip not found" }); return; }
+  if (!authorizeTipAccess(tip, req, res)) return;
 
   const handoffs = await listForensicsHandoffs(tipId);
   res.json(handoffs);
