@@ -43,10 +43,20 @@ const MAX_CONCURRENT_JOBS = 1; // Strict serial processing to prevent race condi
 async function processNextJob(): Promise<void> {
   if (activeJobs.size >= MAX_CONCURRENT_JOBS) return;
 
-  // Sort by priority (lower number = higher priority)
-  const next = inMemoryQueue
-    .filter((j) => j.status === "waiting")
-    .sort((a, b) => a.priority - b.priority)[0];
+  // ⚡ Bolt Optimization: Replace O(N log N) filter+sort with O(N) single pass
+  // Finding the highest priority waiting job by scanning the array once avoids
+  // allocating a new array and the overhead of sorting, reducing CPU usage.
+  let next: QueuedJob | undefined = undefined;
+  for (let i = 0; i < inMemoryQueue.length; i++) {
+    const j = inMemoryQueue[i];
+    if (j.status === "waiting") {
+      if (!next || j.priority < next.priority) {
+        next = j;
+      }
+      // Optimization: 1 is the highest possible priority, so we can stop early
+      if (next.priority === 1) break;
+    }
+  }
 
   if (!next) return;
 
