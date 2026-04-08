@@ -1191,7 +1191,7 @@ EMAIL_ENABLED=${c.emailEnabled}
 ${c.emailEnabled ? `EMAIL_IMAP_HOST=${c.emailHost}\nEMAIL_USER=${c.emailUser}\nEMAIL_PASSWORD=${c.emailPass}` : `# EMAIL_IMAP_HOST=\n# EMAIL_USER=\n# EMAIL_PASSWORD=`}
 
 VPN_PORTAL_ENABLED=true
-VPN_PORTAL_SECRET=${crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')}
+VPN_PORTAL_SECRET=${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')}
 
 ${c.vicKey ? `PROJECT_VIC_API_KEY=${c.vicKey}` : `# PROJECT_VIC_API_KEY=`}
 ${c.iwfKey ? `IWF_API_KEY=${c.iwfKey}` : `# IWF_API_KEY=`}
