@@ -45,3 +45,11 @@
 ## 2026-04-02 - Sequential Queries in Object Hydration
 **Learning:** In `getTipById`, the codebase fetched the parent record `cyber_tips`, awaited it, and only then initiated a `Promise.all` for child queries (`tip_files`, `preservation_requests`, `audit_log`). This sequential pattern adds a full database round-trip of latency per tip lookup, which is a significant bottleneck for high-frequency operations.
 **Action:** Consolidate parent and child queries into a single `Promise.all` batch whenever possible. Wait for the batch to resolve, then check if the parent row exists before hydrating objects to save a full sequential database round-trip.
+
+## 2026-04-02 - Sequential Count and Data Queries
+**Learning:** `listTips` performs a count query to get the total number of records, then sequentially performs a data query to fetch the records themselves. These independent read operations incur a full sequential database round-trip overhead.
+**Action:** Always fetch total count and paginated data queries concurrently using `Promise.all` to reduce total database read latency.
+
+## 2026-04-02 - Sequential Reporting Queries
+**Learning:** The `sendNightlyDigest` job fetched tips for two different tiers (IMMEDIATE and URGENT) using sequential `await listTips(...)` calls, delaying the execution of the second request.
+**Action:** When multiple independent summary datasets or reports are required (e.g., fetching lists for different categories or tiers), execute the data fetch operations concurrently via `Promise.all` rather than sequentially.

@@ -420,35 +420,38 @@ export async function listTips(opts: ListTipsOptions = {}): Promise<ListTipsResu
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // Count query
-  const countResult = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) as count FROM cyber_tips ${where}`,
-    params
-  );
-  const total = parseInt(countResult.rows[0]!.count, 10);
-
   // ⚡ Bolt Optimization: Exclude large body text when not needed
   const columns = opts.exclude_body
     ? "tip_id, ncmec_tip_number, ids_case_number, source, received_at, status, is_bundled, bundled_incident_count, ncmec_urgent_flag, reporter, jurisdiction_of_tip, legal_status, extracted, hash_matches, classification, links, priority, '' as raw_body, '' as normalized_body"
     : "*";
 
-  // Data query — sorted by tier priority then score, paginated
-  const dataResult = await pool.query<TipRow>(
-    `SELECT ${columns} FROM cyber_tips ${where}
-     ORDER BY
-       CASE priority->>'tier'
-         WHEN 'IMMEDIATE' THEN 0
-         WHEN 'URGENT'    THEN 1
-         WHEN 'PAUSED'    THEN 2
-         WHEN 'STANDARD'  THEN 3
-         WHEN 'MONITOR'   THEN 4
-         ELSE 99
-       END ASC,
-       (priority->>'score')::numeric DESC NULLS LAST,
-       received_at DESC
-     LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
-    [...params, limit, offset]
-  );
+  // ⚡ Bolt Optimization: Run count and data queries concurrently to save a sequential database round-trip
+  const [countResult, dataResult] = await Promise.all([
+    // Count query
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM cyber_tips ${where}`,
+      params
+    ),
+    // Data query — sorted by tier priority then score, paginated
+    pool.query<TipRow>(
+      `SELECT ${columns} FROM cyber_tips ${where}
+       ORDER BY
+         CASE priority->>'tier'
+           WHEN 'IMMEDIATE' THEN 0
+           WHEN 'URGENT'    THEN 1
+           WHEN 'PAUSED'    THEN 2
+           WHEN 'STANDARD'  THEN 3
+           WHEN 'MONITOR'   THEN 4
+           ELSE 99
+         END ASC,
+         (priority->>'score')::numeric DESC NULLS LAST,
+         received_at DESC
+       LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+      [...params, limit, offset]
+    )
+  ]);
+
+  const total = parseInt(countResult.rows[0]!.count, 10);
 
   // For list view, fetch files inline (one additional query batched)
   const tipIds = dataResult.rows.map((r) => r.tip_id);
