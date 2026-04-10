@@ -54,6 +54,12 @@ function verifyAgencyApiKey(): RequestHandler {
         return;
       }
 
+      const agencyNameRegex = /^[\p{L}\p{N}\s\-\.\(\)\[\]&',]{2,100}$/u;
+      if (!agencyNameRegex.test(agencyName)) {
+        res.status(400).json({ error: "Invalid agency name format" });
+        return;
+      }
+
       const agency = await getAgencyByKey(apiKey);
       if (!agency || agency.status !== "active") {
         res.status(403).json({ error: "Unauthorized agency" });
