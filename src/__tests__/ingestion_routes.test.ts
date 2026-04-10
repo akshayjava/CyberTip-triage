@@ -6,6 +6,7 @@ import { upsertAgency } from "../db/agencies.js";
 import { v4 as uuidv4 } from "uuid";
 
 // Setup test app
+process.env["VPN_PORTAL_SECRET"] = "test-secret";
 const app = express();
 app.use(express.json());
 mountIngestionRoutes(app);
@@ -94,6 +95,17 @@ describe("Agency API Key Validation", () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("Missing agency credentials");
+  });
+
+  it("should return 400 if agency name is invalid", async () => {
+    const res = await request(app)
+      .post("/intake/agency")
+      .set("x-agency-key", activeKey)
+      .set("x-agency-name", "<script>alert(1)</script>")
+      .send({ content: "test tip" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Invalid agency name format");
   });
 });
 
