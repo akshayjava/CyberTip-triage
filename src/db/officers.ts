@@ -298,6 +298,14 @@ export async function suggestAssignment(
     if (specialist) return specialist;
   }
 
-  // Pick the officer with the fewest current assignments
-  return eligible.sort((a, b) => a.assigned_tip_ids.length - b.assigned_tip_ids.length)[0] ?? null;
+  // ⚡ Bolt Optimization: Replace O(N log N) sort with single O(N) pass
+  // to find the officer with the fewest current assignments without array allocations
+  let bestOfficer: OfficerPublic | null = null;
+  for (let i = 0; i < eligible.length; i++) {
+    const current = eligible[i];
+    if (!bestOfficer || current.assigned_tip_ids.length < bestOfficer.assigned_tip_ids.length) {
+      bestOfficer = current;
+    }
+  }
+  return bestOfficer;
 }
