@@ -24,3 +24,9 @@
 **Prevention:**
 1.  **No Code Bypasses:** Do not include code that intentionally bypasses security checks (like "dev mode" flags or hardcoded "magic" values) in production middleware.
 2.  **Use Test Environments:** Ensure tests use validly signed test fixtures or mock the middleware at the test framework level.
+## 2026-08-15 - Insecure Input Validation on Agency Name
+**Vulnerability:** The `/intake/agency` endpoint in `src/ingestion/routes.ts` blindly trusted the `x-agency-name` header. An attacker could potentially inject malicious characters leading to Log Injection or XSS in admin dashboards.
+**Learning:** Custom HTTP headers provided by clients or external systems must be treated as untrusted input. Validation logic must be applied specifically to the expected format.
+**Prevention:**
+1.  **Strict Regex Validation:** Apply an explicit regex validation such as `/^[\p{L}\p{N}\s\-\.\(\)\[\]&',]{2,100}$/u` to ensure header strings only contain valid business characters. Include the `u` flag to safely support international characters.
+2.  **Fail Fast:** Return a 400 Bad Request directly from the middleware when validation fails to prevent downstream systems from interacting with bad data.

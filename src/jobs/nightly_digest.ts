@@ -37,21 +37,23 @@ async function sendNightlyDigest(): Promise<void> {
 
     // ── Fetch detailed tips for the email ─────────────────────────────────────
     // Only fetch the high-priority tips needed for the detailed list, instead of all tips.
-    const { tips: immediateList } = await listTips({
-      since: windowStart,
-      tier: "IMMEDIATE",
-      limit: 50,
-      exclude_body: true,
-      exclude_files: true,
-    });
-
-    const { tips: urgentList } = await listTips({
-      since: windowStart,
-      tier: "URGENT",
-      limit: 50,
-      exclude_body: true,
-      exclude_files: true,
-    });
+    // ⚡ Bolt Optimization: Fetch IMMEDIATE and URGENT tips concurrently to reduce sequential I/O latency.
+    const [{ tips: immediateList }, { tips: urgentList }] = await Promise.all([
+      listTips({
+        since: windowStart,
+        tier: "IMMEDIATE",
+        limit: 50,
+        exclude_body: true,
+        exclude_files: true,
+      }),
+      listTips({
+        since: windowStart,
+        tier: "URGENT",
+        limit: 50,
+        exclude_body: true,
+        exclude_files: true,
+      })
+    ]);
 
     // Collect high-priority tip summaries for the detailed section.
     const immediateTips = immediateList.map(tip => ({
