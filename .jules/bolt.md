@@ -53,7 +53,6 @@
 ## 2026-04-02 - Sequential Reporting Queries
 **Learning:** The `sendNightlyDigest` job fetched tips for two different tiers (IMMEDIATE and URGENT) using sequential `await listTips(...)` calls, delaying the execution of the second request.
 **Action:** When multiple independent summary datasets or reports are required (e.g., fetching lists for different categories or tiers), execute the data fetch operations concurrently via `Promise.all` rather than sequentially.
-
-## 2026-04-03 - O(N log N) Array Sorting in Queues and Lookups
-**Learning:** Using `.filter().sort()[0]` to find an extreme value (like highest priority job or officer with fewest cases) allocates a new array and performs an O(N log N) sort, causing unnecessary CPU and memory overhead for large lists.
-**Action:** Always replace `.sort()[0]` patterns with a single O(N) pass loop keeping track of the minimum/maximum element to prevent unnecessary array allocations.
+## 2026-04-03 - O(N log N) Sorting for Single Element Selection
+**Learning:** Finding the single highest-priority element by sorting the entire array (`.sort((a, b) => a.priority - b.priority)[0]`) introduces unnecessary $O(N \log N)$ complexity and creates intermediate arrays, causing performance overhead in hot paths like the queue's `processNextJob`.
+**Action:** Replace sorting for single-element selection with a single $O(N)$ pass loop that tracks the current best item, avoiding the sorting overhead and memory allocation.
